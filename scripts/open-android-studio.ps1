@@ -4,12 +4,12 @@
 # =============================================================================
 
 Write-Host ""
-Write-Host "📱 Abriendo Android Studio..." -ForegroundColor Cyan
+Write-Host "=== Abriendo Android Studio ===" -ForegroundColor Cyan
 
 # Verificar que existe la carpeta android
 if (-not (Test-Path "android")) {
-    Write-Host "❌ No se encontró la carpeta 'android'." -ForegroundColor Red
-    Write-Host "   Ejecuta primero: .\scripts\prepare-apk.ps1" -ForegroundColor Yellow
+    Write-Host "[X] No se encontro la carpeta 'android'." -ForegroundColor Red
+    Write-Host "    Ejecuta primero: .\scripts\prepare-apk.ps1" -ForegroundColor Yellow
     exit 1
 }
 
@@ -29,19 +29,21 @@ foreach ($path in $studioPaths) {
 }
 
 if ($studioFound) {
-    Write-Host "✓ Android Studio encontrado: $studioFound" -ForegroundColor Green
-    Start-Process $studioFound -ArgumentList (Resolve-Path "android").Path
-    Write-Host "✓ Abriendo proyecto..." -ForegroundColor Green
+    Write-Host "[OK] Android Studio encontrado: $studioFound" -ForegroundColor Green
+    $androidPath = (Resolve-Path "android").Path
+    Start-Process $studioFound -ArgumentList $androidPath
+    Write-Host "[OK] Abriendo proyecto..." -ForegroundColor Green
 } else {
-    Write-Host "⚠️  Android Studio no encontrado en ubicaciones comunes." -ForegroundColor Yellow
-    Write-Host "   Abre Android Studio manualmente y selecciona la carpeta:" -ForegroundColor White
-    Write-Host "   $(Resolve-Path 'android').Path" -ForegroundColor Gray
+    Write-Host "[!]  Android Studio no encontrado en ubicaciones comunes." -ForegroundColor Yellow
+    Write-Host "    Abre Android Studio manualmente y selecciona la carpeta:" -ForegroundColor White
+    $androidPath = (Resolve-Path "android").Path
+    Write-Host "    $androidPath" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "   O usa el comando:" -ForegroundColor White
-    Write-Host "   bunx cap open android" -ForegroundColor Yellow
+    Write-Host "    O usa el comando:" -ForegroundColor White
+    Write-Host "    bunx cap open android" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "Una vez abierto:" -ForegroundColor Cyan
-Write-Host "  Build → Build Bundle(s)/APK(s) → Build APK(s)" -ForegroundColor White
+Write-Host "  Build -> Build Bundle(s)/APK(s) -> Build APK(s)" -ForegroundColor White
 Write-Host ""
