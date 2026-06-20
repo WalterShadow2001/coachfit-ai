@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
         mealPlan = { ...mealPlan, parsed: mp }
       } catch (e: any) {
         console.error('Meal plan error:', e)
-        return NextResponse.json({ error: `Error generando plan de comidas: ${e.message}` }, { status: 500 })
+        // No retornar error, continuar con exercise plan
       }
     }
 

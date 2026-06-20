@@ -218,21 +218,26 @@ REQUISITOS:
 
 Responde SOLO con el JSON, sin texto adicional.`
 
-  const response = await zai.chat.completions.create({
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.7,
-  })
+  try {
+    const response = await zai.chat.completions.create({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+    })
 
-  const content = response?.choices?.[0]?.message?.content || ''
-  const parsed = safeParse<WeeklyMealPlan>(content)
-  if (!parsed || !parsed.days || parsed.days.length === 0) {
-    console.warn('Using fallback meal plan, content was:', content.slice(0, 500))
+    const content = response?.choices?.[0]?.message?.content || ''
+    const parsed = safeParse<WeeklyMealPlan>(content)
+    if (!parsed || !parsed.days || parsed.days.length === 0) {
+      console.warn('Using fallback meal plan, content was:', content.slice(0, 500))
+      return generateFallbackMealPlan(profile)
+    }
+    return parsed
+  } catch (e: any) {
+    console.warn('Meal plan AI error, using fallback:', e.message)
     return generateFallbackMealPlan(profile)
   }
-  return parsed
 }
 
 function generateFallbackMealPlan(profile: AIProfileSnapshot): WeeklyMealPlan {
@@ -420,28 +425,46 @@ Si no registró nada, asume que no cumplió.
 
 Responde SOLO con el JSON.`
 
-  const response = await zai.chat.completions.create({
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.6,
-  })
+  try {
+    const response = await zai.chat.completions.create({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.6,
+    })
 
-  const content = response?.choices?.[0]?.message?.content || ''
-  const parsed = safeParse<DailyFeedback>(content)
-  if (!parsed) {
+    const content = response?.choices?.[0]?.message?.content || ''
+    const parsed = safeParse<DailyFeedback>(content)
+    if (!parsed) {
+      return {
+        date: input.date,
+        adherenceScore: 50,
+        summary: 'No pude generar el análisis completo de tu día.',
+        positives: ['Cualquier esfuerzo cuenta'],
+        improvements: ['Intenta registrar tus comidas y ejercicio'],
+        tomorrowRecommendation: 'Registra todo para que pueda darte feedback útil.',
+        motivationalMessage: 'Cada día es una nueva oportunidad.',
+      }
+    }
+    return parsed
+  } catch (e: any) {
+    console.warn('Feedback AI error, using fallback:', e.message)
+    // Calcular score básico basado en logs
+    const mealCount = input.actualMeals.length
+    const exerciseMin = input.actualExercise.reduce((s: number, e: any) => s + (e.durationMin || 0), 0)
+    const plannedMealsCount = input.plannedMeals.reduce((s: number, m: any) => s + (m.breakfast ? 1 : 0) + (m.lunch ? 1 : 0) + (m.dinner ? 1 : 0), 0)
+    const score = Math.min(100, Math.round((mealCount / Math.max(plannedMealsCount, 3)) * 50 + (exerciseMin / 30) * 10))
     return {
       date: input.date,
-      adherenceScore: 50,
-      summary: 'No pude generar el análisis completo de tu día.',
-      positives: ['Cualquier esfuerzo cuenta'],
-      improvements: ['Intenta registrar tus comidas y ejercicio'],
-      tomorrowRecommendation: 'Registra todo para que pueda darte feedback útil.',
-      motivationalMessage: 'Cada día es una nueva oportunidad.',
+      adherenceScore: score,
+      summary: `Registraste ${mealCount} comidas y ${exerciseMin} min de ejercicio.`,
+      positives: mealCount > 0 ? ['Registraste tus comidas'] : ['Cada día es una nueva oportunidad'],
+      improvements: exerciseMin === 0 ? ['Intenta hacer algo de ejercicio mañana'] : ['Mantén la constancia'],
+      tomorrowRecommendation: exerciseMin < 30 ? 'Intenta hacer al menos 30 min de ejercicio' : 'Continúa con tu rutina',
+      motivationalMessage: '¡Sigue adelante, cada paso cuenta!',
     }
   }
-  return parsed
 }
 
 export async function generateNotificationMessage(input: {
