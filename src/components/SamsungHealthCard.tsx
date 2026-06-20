@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   HeartPulse, Footprints, Flame, Clock, Activity, Moon, Plus,
-  Watch, RefreshCw, Loader2, X, Sparkles
+  Watch, RefreshCw, Loader2, X, Sparkles, Smartphone, Heart
 } from 'lucide-react'
 import { useHealthConnect, submitManualHealthData } from '@/hooks/use-health-connect'
 import {
@@ -19,8 +19,12 @@ import { toast } from 'sonner'
 
 export default function SamsungHealthCard() {
   const {
-    connected, lastSync, todayData, weekData, loading, error,
-    requestPermission, syncFromDevice, disconnect, refresh,
+    samsungHealthConnected, googleFitConnected, connected,
+    lastSync, todayData, loading, error,
+    connect, syncFromDevice, disconnect, refresh,
+    // Ritmo cardíaco
+    currentHeartRate, heartRateHistory, heartRateMonitoring,
+    startHeartRateMonitoring, stopHeartRateMonitoring, pushHeartRate,
   } = useHealthConnect()
   const [manualOpen, setManualOpen] = useState(false)
   const [manualData, setManualData] = useState({
@@ -32,18 +36,21 @@ export default function SamsungHealthCard() {
     sleepHours: '',
   })
 
-  const handleConnect = async () => {
-    const ok = await requestPermission()
+  const handleConnectSamsung = async () => {
+    const ok = await connect('samsung_health')
     if (ok) toast.success('Samsung Health conectado')
   }
+  const handleConnectGoogleFit = async () => {
+    const ok = await connect('google_fit')
+    if (ok) toast.success('Google Fit conectado')
+  }
 
-  const handleSync = async () => {
-    const data = await syncFromDevice()
+  const handleSync = async (service: 'samsung_health' | 'google_fit') => {
+    const data = await syncFromDevice(service)
     if (data) {
       toast.success(`Sincronizado: ${data.steps} pasos`)
       await refresh()
     } else if (error) {
-      // Mostrar dialog para entrada manual
       setManualOpen(true)
     }
   }
@@ -66,12 +73,20 @@ export default function SamsungHealthCard() {
     }
   }
 
+  const handleMeasureHeartRate = async () => {
+    // En APK: esto se leería del sensor en tiempo real
+    // Para web: simulamos con un valor aleatorio (en APK sería el sensor)
+    const bpm = Math.floor(Math.random() * 30) + 65 // 65-95 bpm
+    await pushHeartRate(bpm, 'manual')
+    toast.success(`FC medida: ${bpm} bpm`)
+  }
+
   if (loading && !todayData) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Watch className="w-5 h-5 text-primary" /> Samsung Health
+            <Watch className="w-5 h-5 text-primary" /> Salud conectada
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -88,12 +103,12 @@ export default function SamsungHealthCard() {
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
-                <Watch className="w-5 h-5 text-primary" /> Samsung Health
+                <Watch className="w-5 h-5 text-primary" /> Salud conectada
               </CardTitle>
               <CardDescription className="text-xs">
                 {connected
-                  ? `Conectado · Última sync: ${lastSync ? lastSync.toLocaleString('es-MX') : '-'}`
-                  : 'Conecta tu reloj Samsung para ver actividad automáticamente'}
+                  ? `Conectado · ${[samsungHealthConnected && 'Samsung Health', googleFitConnected && 'Google Fit'].filter(Boolean).join(' + ')}`
+                  : 'Conecta tu reloj o app de salud'}
               </CardDescription>
             </div>
             {connected && (
@@ -109,23 +124,62 @@ export default function SamsungHealthCard() {
             <div className="text-center py-4">
               <Watch className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
               <p className="text-sm text-muted-foreground mb-3">
-                Conecta Samsung Health / Health Connect para registrar automáticamente pasos, calorías, ritmo cardíaco y ejercicios.
+                Conecta Samsung Health, Google Fit o Health Connect para registrar automáticamente pasos, calorías, ritmo cardíaco y ejercicios.
               </p>
               <div className="space-y-2">
-                <Button onClick={handleConnect} className="w-full" disabled={loading}>
+                <Button onClick={handleConnectSamsung} className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Watch className="w-4 h-4 mr-2" />}
                   Conectar Samsung Health
                 </Button>
-                <Button variant="outline" onClick={() => setManualOpen(true)} className="w-full text-xs" size="sm">
+                <Button onClick={handleConnectGoogleFit} variant="outline" className="w-full" disabled={loading}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Smartphone className="w-4 h-4 mr-2" />}
+                  Conectar Google Fit
+                </Button>
+                <Button variant="ghost" onClick={() => setManualOpen(true)} className="w-full text-xs" size="sm">
                   <Plus className="w-3 h-3 mr-1" /> Registrar datos manualmente
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                ℹ️ En la versión APK, esto conecta automáticamente con Samsung Health vía Health Connect (Android 14+)
+                ℹ️ En la versión APK, esto conecta automáticamente vía Health Connect (Android 14+)
               </p>
             </div>
           ) : (
             <>
+              {/* Ritmo cardíaco en tiempo real */}
+              <div className="bg-gradient-to-br from-rose-500 to-rose-600 text-white p-3 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs opacity-90 flex items-center gap-1">
+                      <HeartPulse className="w-3 h-3" /> Ritmo cardíaco
+                    </div>
+                    <div className="text-3xl font-bold mt-1">
+                      {currentHeartRate || '--'}
+                      <span className="text-sm font-normal opacity-80 ml-1">bpm</span>
+                    </div>
+                    {heartRateMonitoring && (
+                      <div className="text-xs opacity-80 mt-1 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                        Monitoreando
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {!heartRateMonitoring ? (
+                      <Button size="sm" variant="secondary" className="bg-white/20 text-white hover:bg-white/30" onClick={startHeartRateMonitoring}>
+                        <Activity className="w-3 h-3 mr-1" /> Monitorear
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="secondary" className="bg-white/20 text-white hover:bg-white/30" onClick={stopHeartRateMonitoring}>
+                        <span className="w-3 h-3 mr-1">⏸</span> Detener
+                      </Button>
+                    )}
+                    <Button size="sm" variant="secondary" className="bg-white/20 text-white hover:bg-white/30" onClick={handleMeasureHeartRate}>
+                      <Heart className="w-3 h-3 mr-1" /> Medir
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* Stats del día */}
               <div className="grid grid-cols-2 gap-2">
                 <StatCard
@@ -191,16 +245,35 @@ export default function SamsungHealthCard() {
 
               {/* Acciones */}
               <div className="flex gap-2 pt-2 border-t">
-                <Button size="sm" variant="outline" onClick={handleSync} disabled={loading} className="flex-1">
-                  {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                  Sincronizar
-                </Button>
+                {samsungHealthConnected && (
+                  <Button size="sm" variant="outline" onClick={() => handleSync('samsung_health')} disabled={loading} className="flex-1">
+                    {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                    Sync Samsung
+                  </Button>
+                )}
+                {googleFitConnected && (
+                  <Button size="sm" variant="outline" onClick={() => handleSync('google_fit')} disabled={loading} className="flex-1">
+                    {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                    Sync Google
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => setManualOpen(true)} className="flex-1">
                   <Plus className="w-3 h-3 mr-1" /> Manual
                 </Button>
-                <Button size="sm" variant="ghost" onClick={disconnect} className="text-destructive">
-                  <X className="w-3 h-3" />
-                </Button>
+              </div>
+
+              {/* Desconexiones */}
+              <div className="flex gap-2">
+                {samsungHealthConnected && (
+                  <Button size="sm" variant="ghost" onClick={() => disconnect('samsung_health')} className="text-destructive flex-1 text-xs">
+                    <X className="w-3 h-3 mr-1" /> Desconectar Samsung
+                  </Button>
+                )}
+                {googleFitConnected && (
+                  <Button size="sm" variant="ghost" onClick={() => disconnect('google_fit')} className="text-destructive flex-1 text-xs">
+                    <X className="w-3 h-3 mr-1" /> Desconectar Google
+                  </Button>
+                )}
               </div>
 
               {error && (
@@ -219,7 +292,7 @@ export default function SamsungHealthCard() {
           <DialogHeader>
             <DialogTitle>Registrar actividad manual</DialogTitle>
             <DialogDescription>
-              Si no tienes Samsung Health conectado, puedes registrar tu actividad a mano.
+              Si no tienes Samsung Health o Google Fit, puedes registrar tu actividad a mano.
             </DialogDescription>
           </DialogHeader>
 

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 
 /**
  * GET /api/health
- * Devuelve el estado de conexión con Samsung Health / Health Connect
+ * Devuelve el estado de conexión con Samsung Health / Google Fit / Health Connect
  * y los datos de actividad del día
  */
 export async function GET(req: NextRequest) {
@@ -27,9 +27,28 @@ export async function GET(req: NextRequest) {
       orderBy: { date: 'asc' },
     })
 
+    // Últimas muestras de ritmo cardíaco (últimos 10 min)
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000)
+    const heartRateSamples = await db.heartRateSample.findMany({
+      where: { timestamp: { gte: tenMinAgo } },
+      orderBy: { timestamp: 'desc' },
+      take: 60,
+    })
+
+    // Última muestra de FC
+    const latestHeartRate = heartRateSamples[0] || null
+
     return NextResponse.json({
-      connected: profile?.samsungHealthConnected || false,
-      lastSync: profile?.samsungHealthLastSync || null,
+      connected: {
+        samsungHealth: profile?.samsungHealthConnected || false,
+        googleFit: profile?.googleFitConnected || false,
+        any: (profile?.samsungHealthConnected || false) || (profile?.googleFitConnected || false),
+      },
+      lastSync: {
+        samsungHealth: profile?.samsungHealthLastSync || null,
+        googleFit: profile?.googleFitLastSync || null,
+      },
+      heartRateMonitoring: profile?.heartRateMonitoring || false,
       today: healthData ? {
         date: healthData.date,
         steps: healthData.steps,
@@ -41,12 +60,22 @@ export async function GET(req: NextRequest) {
         heartRateMax: healthData.heartRateMax,
         sleepHours: healthData.sleepHours,
         exercises: JSON.parse(healthData.exercises || '[]'),
+        source: healthData.source,
       } : null,
       week: weekData.map(d => ({
         date: d.date,
         steps: d.steps,
         caloriesBurned: d.caloriesBurned,
         activeMinutes: d.activeMinutes,
+      })),
+      heartRate: latestHeartRate ? {
+        bpm: latestHeartRate.bpm,
+        timestamp: latestHeartRate.timestamp,
+        source: latestHeartRate.source,
+      } : null,
+      heartRateHistory: heartRateSamples.reverse().map(s => ({
+        bpm: s.bpm,
+        timestamp: s.timestamp,
       })),
     })
   } catch (e: any) {
@@ -56,8 +85,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/health
- * Guarda datos de actividad recibidos desde el cliente (que viene de Health Connect)
- * El cliente (Capacitor o web) envía los datos que obtiene del SDK nativo
+ * Guarda datos de actividad recibidos desde el cliente
+ * body.source: "samsung_health" | "google_fit" | "manual" | "bluetooth"
  */
 export async function POST(req: NextRequest) {
   try {
@@ -66,8 +95,9 @@ export async function POST(req: NextRequest) {
 
     const dateStr = date || new Date().toISOString().slice(0, 10)
     const dateObj = new Date(dateStr + 'T00:00:00')
+    const sourceStr = source || 'manual'
 
-    // Upsert
+    // Upsert health data
     const healthData = await db.healthData.upsert({
       where: { date: dateObj },
       update: {
@@ -80,7 +110,7 @@ export async function POST(req: NextRequest) {
         heartRateMax: heartRateMax ? Number(heartRateMax) : null,
         sleepHours: sleepHours ? Number(sleepHours) : null,
         exercises: JSON.stringify(exercises || []),
-        source: source || 'health_connect',
+        source: sourceStr,
         syncStatus: 'pending',
         syncedAt: new Date(),
       },
@@ -95,32 +125,34 @@ export async function POST(req: NextRequest) {
         heartRateMax: heartRateMax ? Number(heartRateMax) : null,
         sleepHours: sleepHours ? Number(sleepHours) : null,
         exercises: JSON.stringify(exercises || []),
-        source: source || 'health_connect',
+        source: sourceStr,
       },
     })
 
-    // Marcar perfil como conectado a Samsung Health
+    // Marcar perfil como conectado según source
     const profile = await db.userProfile.findFirst()
-    if (profile && !profile.samsungHealthConnected) {
-      await db.userProfile.update({
-        where: { id: profile.id },
-        data: { samsungHealthConnected: true, samsungHealthLastSync: new Date() },
-      })
-    } else if (profile) {
-      await db.userProfile.update({
-        where: { id: profile.id },
-        data: { samsungHealthLastSync: new Date() },
-      })
+    if (profile) {
+      const update: any = {}
+      if (sourceStr === 'samsung_health' || sourceStr === 'health_connect') {
+        update.samsungHealthConnected = true
+        update.samsungHealthLastSync = new Date()
+      } else if (sourceStr === 'google_fit') {
+        update.googleFitConnected = true
+        update.googleFitLastSync = new Date()
+      }
+      if (Object.keys(update).length > 0) {
+        await db.userProfile.update({ where: { id: profile.id }, data: update })
+      }
     }
 
     // Si hay ejercicios registrados, crear ExerciseLogs automáticamente
     if (exercises && Array.isArray(exercises) && exercises.length > 0) {
       const startOfDay = new Date(dateStr + 'T00:00:00')
       const endOfDay = new Date(dateStr + 'T23:59:59')
-      // Borrar logs previos de samsung_health de ese día
+      // Borrar logs previos de samsung_health/google_fit de ese día
       await db.exerciseLog.deleteMany({
         where: {
-          source: 'samsung_health',
+          source: { in: ['samsung_health', 'google_fit'] },
           loggedAt: { gte: startOfDay, lte: endOfDay },
         },
       })
@@ -131,9 +163,9 @@ export async function POST(req: NextRequest) {
             durationMin: Number(ex.duration) || 0,
             caloriesBurn: ex.calories ? Number(ex.calories) : null,
             intensity: ex.intensity || null,
-            notes: `Detectado por Samsung Health`,
+            notes: `Detectado por ${sourceStr}`,
             onPlan: null,
-            source: 'samsung_health',
+            source: sourceStr,
             syncStatus: 'pending',
           },
         })
@@ -153,21 +185,28 @@ export async function POST(req: NextRequest) {
 
 /**
  * DELETE /api/health
- * Desconecta Samsung Health
+ * Desconecta el servicio indicado
+ * body.source: "samsung_health" | "google_fit" (default: ambos)
  */
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url)
+    const source = searchParams.get('source') || 'all'
+
     const profile = await db.userProfile.findFirst()
     if (profile) {
-      await db.userProfile.update({
-        where: { id: profile.id },
-        data: {
-          samsungHealthConnected: false,
-          samsungHealthLastSync: null,
-        },
-      })
+      const update: any = {}
+      if (source === 'samsung_health' || source === 'all') {
+        update.samsungHealthConnected = false
+        update.samsungHealthLastSync = null
+      }
+      if (source === 'google_fit' || source === 'all') {
+        update.googleFitConnected = false
+        update.googleFitLastSync = null
+      }
+      await db.userProfile.update({ where: { id: profile.id }, data: update })
     }
-    return NextResponse.json({ ok: true, message: 'Samsung Health desconectado' })
+    return NextResponse.json({ ok: true, message: `${source} desconectado` })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

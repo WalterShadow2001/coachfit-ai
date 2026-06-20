@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface HealthData {
   steps: number
@@ -25,46 +25,46 @@ interface HealthData {
 interface UseHealthConnectResult {
   supported: boolean
   permission: 'granted' | 'denied' | 'prompt' | 'unknown'
+  samsungHealthConnected: boolean
+  googleFitConnected: boolean
   connected: boolean
-  lastSync: Date | null
+  lastSync: { samsungHealth?: Date | null; googleFit?: Date | null }
+  heartRateMonitoring: boolean
   todayData: HealthData | null
   weekData: Array<{ date: string; steps: number; caloriesBurned: number; activeMinutes: number }>
+  // Ritmo cardíaco en tiempo real
+  currentHeartRate: number | null
+  heartRateHistory: Array<{ bpm: number; timestamp: string }>
+  // Carga
   loading: boolean
   error: string | null
-  requestPermission: () => Promise<boolean>
-  syncFromDevice: () => Promise<HealthData | null>
-  disconnect: () => Promise<void>
+  // Acciones
+  connect: (service: 'samsung_health' | 'google_fit') => Promise<boolean>
+  syncFromDevice: (service: 'samsung_health' | 'google_fit') => Promise<HealthData | null>
+  disconnect: (service: 'samsung_health' | 'google_fit' | 'all') => Promise<void>
   refresh: () => Promise<void>
+  // Ritmo cardíaco
+  startHeartRateMonitoring: () => Promise<void>
+  stopHeartRateMonitoring: () => Promise<void>
+  pushHeartRate: (bpm: number, source?: string) => Promise<void>
 }
 
-/**
- * Hook para integrar con Health Connect (Android 14+) o Samsung Health
- *
- * En PWA: usa la API experimental de Web Health (Chrome) o fallback a manual
- * En APK con Capacitor: usa @capacitor-community/health (plugin nativo)
- *
- * Por ahora, en navegador web no hay API nativa para Health Connect,
- * así que el hook:
- * 1. Detecta si está disponible
- * 2. Pide permisos si está disponible
- * 3. Lee datos del día
- * 4. Si no está disponible, permite entrada manual
- *
- * Para APK real, integrar Capacitor:
- *   import { Health } from '@capacitor-community/health'
- *   const granted = await Health.requestAuthorization({
- *     read: ['steps', 'calories.active', 'calories.basal', 'distance', 'activity', 'heart_rate', 'sleep']
- *   })
- */
 export function useHealthConnect(): UseHealthConnectResult {
-  const [supported] = useState(false) // Web no soporta nativamente (cambiar en Capacitor)
+  const [supported] = useState(false)
   const [permission, setPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
-  const [connected, setConnected] = useState(false)
-  const [lastSync, setLastSync] = useState<Date | null>(null)
+  const [samsungHealthConnected, setSamsungHealthConnected] = useState(false)
+  const [googleFitConnected, setGoogleFitConnected] = useState(false)
+  const [heartRateMonitoring, setHeartRateMonitoring] = useState(false)
+  const [lastSync, setLastSync] = useState<{ samsungHealth?: Date | null; googleFit?: Date | null }>({})
   const [todayData, setTodayData] = useState<HealthData | null>(null)
   const [weekData, setWeekData] = useState<any[]>([])
+  const [currentHeartRate, setCurrentHeartRate] = useState<number | null>(null)
+  const [heartRateHistory, setHeartRateHistory] = useState<Array<{ bpm: number; timestamp: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const hrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const connected = samsungHealthConnected || googleFitConnected
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -72,43 +72,43 @@ export function useHealthConnect(): UseHealthConnectResult {
     try {
       const res = await fetch('/api/health')
       const data = await res.json()
-      setConnected(data.connected || false)
-      setLastSync(data.lastSync ? new Date(data.lastSync) : null)
+      setSamsungHealthConnected(data.connected?.samsungHealth || false)
+      setGoogleFitConnected(data.connected?.googleFit || false)
+      setHeartRateMonitoring(data.heartRateMonitoring || false)
+      setLastSync({
+        samsungHealth: data.lastSync?.samsungHealth ? new Date(data.lastSync.samsungHealth) : null,
+        googleFit: data.lastSync?.googleFit ? new Date(data.lastSync.googleFit) : null,
+      })
       setTodayData(data.today)
       setWeekData(data.week || [])
-      setPermission(data.connected ? 'granted' : 'prompt')
+      if (data.heartRate) {
+        setCurrentHeartRate(data.heartRate.bpm)
+      }
+      if (data.heartRateHistory) {
+        setHeartRateHistory(data.heartRateHistory)
+      }
+      setPermission(connected ? 'granted' : 'prompt')
     } catch (e: any) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [connected])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  const requestPermission = useCallback(async (): Promise<boolean> => {
-    // En web: no hay API nativa Health Connect disponible
-    // En APK con Capacitor: esto llamaría al plugin nativo
-    //
-    // Por ahora marcamos como "conectado" para permitir entrada manual
-    // Los datos reales vendrán del SDK nativo cuando se convierta a APK
-
+  const connect = useCallback(async (service: 'samsung_health' | 'google_fit'): Promise<boolean> => {
     setLoading(true)
     try {
-      // En APK: aquí se llamaría:
+      // En APK: aquí se llamaría al plugin nativo
       // const { Health } = await import('@capacitor-community/health')
-      // await Health.requestAuthorization({...})
+      // await Health.requestAuthorization({ read: [...] })
 
       // Para web/demo: marcamos como conectado
-      setPermission('granted')
-      setConnected(true)
-
-      // Guardar en backend que está "conectado" (en APK real, el plugin haría la lectura)
       const profile = await fetch('/api/onboarding').then(r => r.json())
       if (profile.profile) {
-        // Crear registro vacío de HealthData para hoy
         await fetch('/api/health', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -120,11 +120,13 @@ export function useHealthConnect(): UseHealthConnectResult {
             distanceMeters: 0,
             activeMinutes: 0,
             exercises: [],
-            source: 'manual_setup',
+            source: service,
           }),
         })
       }
-
+      setPermission('granted')
+      if (service === 'samsung_health') setSamsungHealthConnected(true)
+      else setGoogleFitConnected(true)
       await refresh()
       return true
     } catch (e: any) {
@@ -136,28 +138,17 @@ export function useHealthConnect(): UseHealthConnectResult {
     }
   }, [refresh])
 
-  const syncFromDevice = useCallback(async (): Promise<HealthData | null> => {
+  const syncFromDevice = useCallback(async (service: 'samsung_health' | 'google_fit'): Promise<HealthData | null> => {
     setLoading(true)
     setError(null)
     try {
-      // En APK con Capacitor, aquí se leerían los datos nativos:
-      //
+      // En APK con Capacitor:
       // const { Health } = await import('@capacitor-community/health')
-      // const today = new Date()
-      // today.setHours(0, 0, 0, 0)
-      // const tomorrow = new Date(today)
-      // tomorrow.setDate(tomorrow.getDate() + 1)
-      //
-      // const steps = await Health.querySteps({ startDate: today, endDate: tomorrow })
-      // const calories = await Health.queryCaloriesActive({ startDate: today, endDate: tomorrow })
-      // const heartRate = await Health.queryHeartRate({ startDate: today, endDate: tomorrow })
-      // const exercises = await Health.queryWorkouts({ startDate: today, endDate: tomorrow })
-      //
-      // Y luego se enviarían al backend con POST /api/health
+      // const steps = await Health.querySteps({...})
+      // const calories = await Health.queryCaloriesActive({...})
+      // ... etc
 
-      // Para web: no podemos leer Health Connect desde el navegador
-      // El usuario puede ingresar datos manualmente a través de otra UI
-      throw new Error('Para sincronizar datos de Samsung Health, necesitas la versión APK de la app')
+      throw new Error(`Para sincronizar datos de ${service}, necesitas la versión APK de la app`)
     } catch (e: any) {
       setError(e.message)
       return null
@@ -166,13 +157,12 @@ export function useHealthConnect(): UseHealthConnectResult {
     }
   }, [])
 
-  const disconnect = useCallback(async () => {
+  const disconnect = useCallback(async (service: 'samsung_health' | 'google_fit' | 'all') => {
     setLoading(true)
     try {
-      await fetch('/api/health', { method: 'DELETE' })
-      setConnected(false)
-      setPermission('prompt')
-      setTodayData(null)
+      await fetch(`/api/health?source=${service}`, { method: 'DELETE' })
+      if (service === 'samsung_health' || service === 'all') setSamsungHealthConnected(false)
+      if (service === 'google_fit' || service === 'all') setGoogleFitConnected(false)
       await refresh()
     } catch (e: any) {
       setError(e.message)
@@ -181,25 +171,79 @@ export function useHealthConnect(): UseHealthConnectResult {
     }
   }, [refresh])
 
+  const pushHeartRate = useCallback(async (bpm: number, source: string = 'manual') => {
+    try {
+      await fetch('/api/heart-rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bpm, source }),
+      })
+      setCurrentHeartRate(bpm)
+      setHeartRateHistory(prev => [...prev, { bpm, timestamp: new Date().toISOString() }].slice(-60))
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [])
+
+  const startHeartRateMonitoring = useCallback(async () => {
+    setHeartRateMonitoring(true)
+    // En APK: usar Health Connect heart rate subscription
+    // Por ahora, simulamos lectura cada 5 segundos (en real vendría del SDK)
+    // El usuario puede medir manualmente con un botón "Medir ahora"
+    if (hrIntervalRef.current) clearInterval(hrIntervalRef.current)
+    // Polling al servidor cada 5s para ver si hay nuevas muestras (en APK real esto sería event-driven)
+    hrIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/heart-rate?minutes=1')
+        const data = await res.json()
+        if (data.latest) {
+          setCurrentHeartRate(data.latest.bpm)
+        }
+        if (data.history) {
+          setHeartRateHistory(data.history)
+        }
+      } catch {}
+    }, 5000)
+  }, [])
+
+  const stopHeartRateMonitoring = useCallback(async () => {
+    setHeartRateMonitoring(false)
+    if (hrIntervalRef.current) {
+      clearInterval(hrIntervalRef.current)
+      hrIntervalRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (hrIntervalRef.current) clearInterval(hrIntervalRef.current)
+    }
+  }, [])
+
   return {
     supported,
     permission,
+    samsungHealthConnected,
+    googleFitConnected,
     connected,
     lastSync,
+    heartRateMonitoring,
     todayData,
     weekData,
+    currentHeartRate,
+    heartRateHistory,
     loading,
     error,
-    requestPermission,
+    connect,
     syncFromDevice,
     disconnect,
     refresh,
+    startHeartRateMonitoring,
+    stopHeartRateMonitoring,
+    pushHeartRate,
   }
 }
 
-/**
- * Submit manual health data (cuando el usuario no tiene APK y quiere registrar a mano)
- */
 export async function submitManualHealthData(data: {
   steps?: number
   caloriesBurned?: number

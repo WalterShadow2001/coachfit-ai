@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 
 interface AppState {
   // Estado de navegación
-  currentView: 'onboarding' | 'dashboard' | 'plan' | 'log' | 'feedback' | 'settings'
+  currentView: 'onboarding' | 'dashboard' | 'plan' | 'log' | 'feedback' | 'profile'
   setView: (v: AppState['currentView']) => void
 
   // Estado de onboarding
@@ -47,6 +47,14 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'coachfit-storage',
+      // Migrar estado viejo: si currentView era 'settings', cambiarlo a 'profile'
+      migrate: (persistedState: any, version: number) => {
+        if (persistedState?.currentView === 'settings') {
+          persistedState.currentView = 'profile'
+        }
+        return persistedState
+      },
+      version: 1,
     }
   )
 )

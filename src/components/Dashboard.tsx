@@ -10,6 +10,7 @@ import { useAppStore } from '@/lib/store'
 import { Loader2, Sparkles, Flame, Apple, Dumbbell, TrendingDown, Bell, ChevronRight } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, BarChart, Bar, CartesianGrid } from 'recharts'
 import SamsungHealthCard from './SamsungHealthCard'
+import GPSRunner from './GPSRunner'
 
 export default function Dashboard() {
   const setView = useAppStore(s => s.setView)
@@ -133,6 +134,9 @@ export default function Dashboard() {
 
       {/* Samsung Health */}
       <SamsungHealthCard />
+
+      {/* GPS Runner */}
+      <GPSRunner />
 
       {/* Plan del día */}
       <Card>

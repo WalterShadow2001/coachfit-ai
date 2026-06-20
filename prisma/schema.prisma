@@ -34,9 +34,13 @@ model UserProfile {
   dislikedFoods   String   // JSON
   equipment       String   // JSON: ["dumbbells","resistance_band","none"]
   goal            String   // "lose" | "maintain" | "gain"
-  // Samsung Health
+  // Conexiones de salud
   samsungHealthConnected Boolean @default(false)
   samsungHealthLastSync  DateTime?
+  googleFitConnected     Boolean @default(false)
+  googleFitLastSync      DateTime?
+  // Configuración de monitoreo
+  heartRateMonitoring    Boolean @default(false) // monitoreo continuo de FC
   // Campos para sincronización
   syncStatus      String   @default("synced")
   lastModified    DateTime @default(now())
@@ -151,7 +155,7 @@ model Settings {
   updatedAt            DateTime @updatedAt
 }
 
-// Datos sincronizados desde Samsung Health / Health Connect
+// Datos sincronizados desde Samsung Health / Health Connect / Google Fit
 model HealthData {
   id           String   @id @default(cuid())
   date         DateTime // día
@@ -166,10 +170,45 @@ model HealthData {
   // Ejercicios específicos (JSON array)
   exercises    String   @default("[]") // [{name, type, duration, calories, startTime, endTime}]
   // Sync metadata
-  source       String   @default("samsung_health") // "samsung_health" | "health_connect" | "manual"
+  source       String   @default("samsung_health") // "samsung_health" | "google_fit" | "health_connect" | "manual"
   syncStatus   String   @default("pending")
   syncedAt     DateTime @default(now())
 
   @@unique([date])
   @@index([date])
+}
+
+// Muestras de ritmo cardíaco en tiempo real (para monitoreo continuo)
+model HeartRateSample {
+  id           String   @id @default(cuid())
+  bpm          Int      // latidos por minuto
+  timestamp    DateTime @default(now())
+  source       String   @default("samsung_health") // "samsung_health" | "google_fit" | "manual" | "bluetooth"
+
+  @@index([timestamp])
+}
+
+// Sesiones de ejercicio con GPS (correr, ciclismo, caminata)
+model ExerciseSession {
+  id           String   @id @default(cuid())
+  type         String   // "running" | "cycling" | "walking" | "hiking"
+  name         String?
+  startTime    DateTime
+  endTime      DateTime?
+  durationMin  Int      @default(0)
+  caloriesBurn Int      @default(0)
+  distanceMeters Float  @default(0)
+  avgPace      String?  // "5:30 /km"
+  avgHeartRate Int?
+  maxHeartRate Int?
+  // Ruta GPS como array de puntos
+  route        String   @default("[]") // JSON: [{lat, lng, timestamp, altitude, speed, accuracy}]
+  // Estado
+  status       String   @default("active") // "active" | "paused" | "finished" | "discarded"
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([startTime])
+  @@index([status])
 }

@@ -7,11 +7,11 @@ import Dashboard from '@/components/Dashboard'
 import PlanView from '@/components/PlanView'
 import Logger from '@/components/Logger'
 import Feedback from '@/components/Feedback'
-import Settings from '@/components/Settings'
+import Profile from '@/components/Profile'
 import NotificationBanner from '@/components/NotificationBanner'
 import QuickLog from '@/components/QuickLog'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { Dumbbell, LayoutDashboard, Salad, Plus, Sparkles, Settings as SettingsIcon } from 'lucide-react'
+import { Dumbbell, LayoutDashboard, Salad, Plus, Sparkles, User } from 'lucide-react'
 
 export default function Home() {
   const { currentView, setView, hasProfile, setHasProfile } = useAppStore()
@@ -75,7 +75,7 @@ export default function Home() {
         {currentView === 'plan' && <PlanView />}
         {currentView === 'log' && <Logger />}
         {currentView === 'feedback' && <Feedback />}
-        {currentView === 'settings' && <Settings />}
+        {currentView === 'profile' && <Profile />}
       </main>
 
       {/* Notificación activa */}
@@ -90,7 +90,7 @@ export default function Home() {
           <NavButton active={currentView === 'plan'} onClick={() => setView('plan')} icon={<Salad className="w-5 h-5" />} label="Plan" />
           <NavButton active={currentView === 'log'} onClick={() => setView('log')} icon={<Plus className="w-6 h-6" />} label="Registrar" highlight />
           <NavButton active={currentView === 'feedback'} onClick={() => setView('feedback')} icon={<Sparkles className="w-5 h-5" />} label="Coach" />
-          <NavButton active={currentView === 'settings'} onClick={() => setView('settings')} icon={<SettingsIcon className="w-5 h-5" />} label="Ajustes" />
+          <NavButton active={currentView === 'profile'} onClick={() => setView('profile')} icon={<User className="w-5 h-5" />} label="Perfil" />
         </div>
       </nav>
     </div>

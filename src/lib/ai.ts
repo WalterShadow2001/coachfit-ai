@@ -485,3 +485,169 @@ export async function generateNotificationMessage(input: {
   }
   return parsed
 }
+
+/**
+ * IA ADAPTATIVA
+ * Regenera SOLO el plan de ejercicio cuando el usuario no está cumpliendo
+ * NO toca el plan de comidas (respeta presupuesto y preferencias)
+ *
+ * Estrategia:
+ * - Si user no quemó suficientes calorías → aumentar duración/intensidad de ejercicio
+ * - Si user no completó ejercicios → simplificar rutina o cambiar a ejercicios más fáciles
+ * - Si user reporta fatiga → bajar intensidad pero mantener duración
+ * - Si user tiene tiempo limitado → ejercicios HIIT más cortos pero efectivos
+ */
+export async function adaptExercisePlan(input: {
+  profile: AIProfileSnapshot
+  currentPlan: WeeklyExercisePlan
+  adherenceData: {
+    daysMissed: string[]
+    avgAdherence: number
+    lastFeedback?: string
+    exerciseLogsLast7Days: any[]
+    caloriesTarget: number
+    caloriesActual: number
+  }
+}): Promise<{ newPlan: WeeklyExercisePlan; reason: string; changes: string[] }> {
+  const zai = getZAI()
+
+  const systemPrompt = `Eres un entrenador personal ADAPTATIVO. Cuando el usuario no cumple su rutina, ajustas SOLAMENTE el ejercicio (nunca la dieta). Respondes en español de México. Tu salida DEBE ser JSON válido con el nuevo plan y explicación de cambios.`
+
+  const userPrompt = `El usuario NO está cumpliendo su plan de ejercicio. Necesito que regeneres SOLO la rutina de ejercicio (la dieta se mantiene igual, NO la cambies).
+
+DATOS DEL USUARIO:
+- ${input.profile.name}, ${input.profile.age} años, objetivo: ${input.profile.goal === 'lose' ? 'bajar de peso' : input.profile.goal === 'gain' ? 'ganar masa muscular' : 'mantener'}
+- Peso: ${input.profile.weightKg} kg → meta: ${input.profile.targetWeightKg} kg
+- Equipo: ${input.profile.equipment.join(', ') || 'peso corporal'}
+- Horarios:
+${input.profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `trabaja ${s.workStart}-${s.workEnd}`} (días: ${s.days.join(', ')})`).join('\n')}
+
+PLAN ACTUAL DE EJERCICIO:
+${JSON.stringify(input.currentPlan.days, null, 2)}
+
+DATOS DE ADHERENCIA:
+- Días perdidos (no hizo ejercicio): ${input.adherenceData.daysMissed.join(', ') || 'ninguno'}
+- Adherencia promedio (7d): ${input.adherenceData.avgAdherence}%
+- Calorías objetivo quemadas/semana: ${input.adherenceData.caloriesTarget}
+- Calorías reales quemadas/semana: ${input.adherenceData.caloriesActual}
+- Déficit calórico: ${input.adherenceData.caloriesTarget - input.adherenceData.caloriesActual} kcal
+
+ÚLTIMO FEEDBACK DE LA IA:
+${input.adherenceData.lastFeedback || 'sin feedback previo'}
+
+EJERCICIOS REALIZADOS (7 días):
+${JSON.stringify(input.adherenceData.exerciseLogsLast7Days.map(l => ({ name: l.actualName, duration: l.durationMin, calories: l.caloriesBurn })), null, 2)}
+
+REGLAS CRÍTICAS:
+1. NO cambies la dieta - solo el ejercicio
+2. Ajusta intensidad y duración según el déficit calórico
+3. Si faltaron muchas calorías → aumenta intensidad/duración de ejercicios
+4. Si días perdidos > 3 → hace ejercicios más cortos (15-20 min) para que sea más fácil cumplir
+5. Si días perdidos <= 2 → mantiene estructura pero aumenta intensidad en días que sí entrena
+6. Considera su horario: en días laborales sesiones más cortas, fines de semana más largas
+
+Devuelve JSON con esta estructura:
+{
+  "newPlan": {
+    "weekStart": "${new Date().toISOString().slice(0, 10)}",
+    "days": [
+      {
+        "day": "lunes",
+        "focus": "...",
+        "exercises": [
+          { "name": "...", "sets": 3, "reps": "12-15", "duration": "10 min", "rest": "60s", "notes": "..." }
+        ],
+        "totalMinutes": 35,
+        "caloriesBurn": 280
+      }
+    ],
+    "notes": "Notas generales sobre el ajuste"
+  },
+  "reason": "1-2 oraciones explicando por qué se ajustó",
+  "changes": ["lista de cambios concretos hechos al plan"]
+}
+
+Responde SOLO con el JSON.`
+
+  try {
+    const response = await zai.chat.completions.create({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.6,
+    })
+
+    const content = response?.choices?.[0]?.message?.content || ''
+    const parsed = safeParse<{ newPlan: WeeklyExercisePlan; reason: string; changes: string[] }>(content)
+
+    if (!parsed || !parsed.newPlan || !parsed.newPlan.days) {
+      // Fallback: ajustar manualmente
+      return generateFallbackAdaptation(input, content)
+    }
+
+    return parsed
+  } catch (e) {
+    console.error('Adapt exercise AI error:', e)
+    return generateFallbackAdaptation(input, '')
+  }
+}
+
+function generateFallbackAdaptation(input: any, rawContent: string): { newPlan: WeeklyExercisePlan; reason: string; changes: string[] } {
+  const changes: string[] = []
+  const days = [...(input.currentPlan.days || [])]
+
+  const deficit = input.adherenceData.caloriesTarget - input.adherenceData.caloriesActual
+  const missedDays = input.adherenceData.daysMissed.length
+
+  if (deficit > 500) {
+    // Aumentar intensidad significativamente
+    changes.push('Aumenté intensidad: más series y reps en todos los ejercicios')
+    changes.push('Agregué ejercicios de cardio extra para quemar más calorías')
+    days.forEach(d => {
+      d.exercises.forEach((ex: any) => {
+        ex.sets = (ex.sets || 3) + 1
+      })
+      // Agregar un ejercicio de cardio extra
+      d.exercises.push({
+        name: 'Burpees',
+        sets: 3,
+        reps: '12',
+        duration: '6 min',
+        rest: '45s',
+        notes: 'Agregado para compensar déficit calórico',
+      })
+      d.caloriesBurn = (d.caloriesBurn || 0) + 80
+      d.totalMinutes = (d.totalMinutes || 0) + 6
+    })
+  } else if (missedDays > 3) {
+    // Simplificar para que sea más fácil cumplir
+    changes.push('Simplifiqué rutinas: sesiones más cortas (15-20 min) para que sean más fáciles de cumplir')
+    changes.push('Enfoque en ejercicios compuestos de alta eficiencia')
+    days.forEach(d => {
+      // Mantener solo los 2 primeros ejercicios
+      d.exercises = d.exercises.slice(0, 2)
+      d.totalMinutes = Math.min(d.totalMinutes || 30, 20)
+    })
+  } else {
+    // Ajuste leve
+    changes.push('Aumenté intensidad ligeramente en días laborales')
+    days.forEach((d: any, i: number) => {
+      if (i < 5) { // días laborales
+        d.exercises.forEach((ex: any) => {
+          ex.reps = ex.reps ? ex.reps.replace(/(\d+)-(\d+)/, (m: string, a: string, b: string) => `${a}-${Number(b) + 2}`) : ex.reps
+        })
+      }
+    })
+  }
+
+  return {
+    newPlan: {
+      weekStart: new Date().toISOString().slice(0, 10),
+      days,
+      notes: 'Plan ajustado automáticamente por bajo cumplimiento. ¡Tú puedes lograrlo!',
+    },
+    reason: `Detecté ${missedDays} días perdidos y un déficit de ${deficit} kcal. Ajusté la rutina para que sea más efectiva sin cambiar tu dieta.`,
+    changes,
+  }
+}
