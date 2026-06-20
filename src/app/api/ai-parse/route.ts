@@ -7,6 +7,18 @@ let zaiInstance: ZAI | null = null
 
 function getZAI(): ZAI {
   if (!zaiInstance) {
+    // 1. Variables de entorno (Vercel/producción)
+    if (process.env.ZAI_BASE_URL && process.env.ZAI_API_KEY) {
+      zaiInstance = new ZAI({
+        baseUrl: process.env.ZAI_BASE_URL,
+        apiKey: process.env.ZAI_API_KEY,
+        chatId: process.env.ZAI_CHAT_ID,
+        userId: process.env.ZAI_USER_ID,
+        token: process.env.ZAI_TOKEN,
+      })
+      return zaiInstance
+    }
+    // 2. Archivo .z-ai-config (sandbox/local)
     const candidates = [
       path.join(process.cwd(), '.z-ai-config'),
       path.join(process.env.HOME || '/root', '.z-ai-config'),

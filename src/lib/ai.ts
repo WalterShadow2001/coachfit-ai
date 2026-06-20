@@ -5,7 +5,18 @@ import path from 'path'
 let zaiInstance: ZAI | null = null
 
 function loadConfig(): { baseUrl: string; apiKey: string; chatId?: string; userId?: string; token?: string } {
-  // Buscar el archivo de configuración en orden de prioridad
+  // 1. Variables de entorno (para Vercel/producción)
+  if (process.env.ZAI_BASE_URL && process.env.ZAI_API_KEY) {
+    return {
+      baseUrl: process.env.ZAI_BASE_URL,
+      apiKey: process.env.ZAI_API_KEY,
+      chatId: process.env.ZAI_CHAT_ID,
+      userId: process.env.ZAI_USER_ID,
+      token: process.env.ZAI_TOKEN,
+    }
+  }
+
+  // 2. Archivo .z-ai-config (para desarrollo local / sandbox)
   const candidates = [
     path.join(process.cwd(), '.z-ai-config'),
     path.join(process.env.HOME || '/root', '.z-ai-config'),
@@ -19,7 +30,8 @@ function loadConfig(): { baseUrl: string; apiKey: string; chatId?: string; userI
       }
     } catch {}
   }
-  // Fallback
+
+  // 3. Fallback
   return { baseUrl: 'https://internal-api.z.ai/v1', apiKey: 'Z.ai' }
 }
 

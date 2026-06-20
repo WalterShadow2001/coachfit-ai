@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // En Vercel no usar output: "standalone" (Vercel usa su propio build)
+  // Para APK con Capacitor, cambiar a output: "export"
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -7,11 +7,8 @@ generator client {
 }
 
 datasource db {
-  // SQLite para desarrollo local / APK offline
-  // Para producción con sync en la nube, cambiar a:
-  //   provider = "libsql"
-  //   url      = env("TURSO_DATABASE_URL")
-  //   directUrl = env("TURSO_AUTH_TOKEN")
+  // Usamos sqlite como provider en schema, pero en runtime usamos el adapter de libsql
+  // Esto permite funcionar tanto con SQLite local como con Turso
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
