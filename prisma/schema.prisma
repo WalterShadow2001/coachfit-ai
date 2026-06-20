@@ -1,0 +1,110 @@
+// CoachFit AI - Esquema de base de datos
+// Compatible con Turso (libsql) y SQLite local
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model UserProfile {
+  id              String   @id @default(cuid())
+  name            String
+  age             Int
+  gender          String   // "male" | "female" | "other"
+  heightCm        Float
+  weightKg        Float
+  targetWeightKg  Float
+  activityLevel   String   // "sedentary" | "light" | "moderate" | "active"
+  budgetPerWeek   Float    // presupuesto semanal en MXN
+  workStart       String   // "09:00"
+  workEnd         String   // "18:00"
+  workDays        String   // JSON: ["mon","tue","wed","thu","fri"]
+  lunchStart      String   // "14:00"
+  lunchEnd        String   // "15:00"
+  wakeTime        String   // "07:00"
+  sleepTime       String   // "23:00"
+  restrictions    String   // JSON: dietary restrictions
+  allergies       String   // JSON
+  dislikedFoods   String   // JSON
+  equipment       String   // JSON: ["dumbbells","resistance_band","none"]
+  goal            String   // "lose" | "maintain" | "gain"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MealPlan {
+  id           String   @id @default(cuid())
+  weekStart    DateTime
+  weekEnd      DateTime
+  content      String   // JSON: full plan
+  generatedFor String   // user profile snapshot
+  createdAt    DateTime @default(now())
+}
+
+model ExercisePlan {
+  id           String   @id @default(cuid())
+  weekStart    DateTime
+  weekEnd      DateTime
+  content      String   // JSON: full routine
+  createdAt    DateTime @default(now())
+}
+
+model MealLog {
+  id           String   @id @default(cuid())
+  type         String   // "breakfast" | "lunch" | "dinner" | "snack"
+  plannedName  String?
+  actualName   String
+  calories     Int?
+  notes        String?
+  loggedAt     DateTime @default(now())
+  onPlan       Boolean?
+}
+
+model ExerciseLog {
+  id           String   @id @default(cuid())
+  plannedName  String?
+  actualName   String
+  durationMin  Int
+  intensity    String?  // "low" | "medium" | "high"
+  caloriesBurn Int?
+  notes        String?
+  loggedAt     DateTime @default(now())
+  onPlan       Boolean?
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  type         String   // "meal" | "exercise" | "reminder" | "feedback"
+  title        String
+  body         String
+  scheduledFor DateTime
+  status       String   @default("pending") // "pending" | "snoozed" | "acknowledged" | "skipped"
+  snoozeUntil  DateTime?
+  retryCount   Int      @default(0)
+  payload      String?  // JSON with extra data
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Feedback {
+  id           String   @id @default(cuid())
+  date         DateTime
+  content      String   // markdown feedback
+  score        Int?     // 0-100 adherence
+  createdAt    DateTime @default(now())
+}
+
+model Settings {
+  id                   String   @id @default("default")
+  notificationsEnabled Boolean  @default(true)
+  snoozeMinutes        Int      @default(15)
+  maxRetries           Int      @default(5)
+  retryIntervalMin     Int      @default(10)
+  quietHoursStart      String   @default("22:00")
+  quietHoursEnd        String   @default("07:00")
+  updatedAt            DateTime @updatedAt
+}
