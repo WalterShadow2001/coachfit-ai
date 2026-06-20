@@ -52,3 +52,15 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Database files
+*.db
+*.db-journal
+prisma/dev.db
+prisma/migrations/dev/
+
+# Build artifacts
+.zscripts/
+agent-ctx/
+
+# OS files
+Thumbs.db
