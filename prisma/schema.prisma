@@ -31,6 +31,16 @@ model UserProfile {
   dislikedFoods   String   // JSON
   equipment       String   // JSON: ["dumbbells","resistance_band","none"]
   goal            String   // "lose" | "maintain" | "gain"
+  // Ubicación del usuario (para precios locales)
+  city            String?  // "Monterrey", "CDMX", etc.
+  state           String?  // "Nuevo León"
+  country         String   @default("México")
+  latitude        Float?
+  longitude       Float?
+  locationDetected Boolean @default(false)
+  // Meta de tiempo para perder/ganar peso
+  targetWeeks     Int?     // cuántas semanas para llegar a la meta
+  targetDate      DateTime? // fecha objetivo calculada
   // Conexiones de salud
   samsungHealthConnected Boolean @default(false)
   samsungHealthLastSync  DateTime?
@@ -208,4 +218,24 @@ model ExerciseSession {
 
   @@index([startTime])
   @@index([status])
+}
+
+// Precios locales de productos (consultados por IA según ubicación del usuario)
+model LocalPrice {
+  id           String   @id @default(cuid())
+  productName  String   // "Pechuga de pollo 1kg", "Huevo 12pz", etc.
+  category     String   // "Proteínas", "Verduras", "Granos", "Lácteos", "Frutas"
+  price        Float    // MXN
+  store        String?  // "Alsuper", "Ahorrera", "Soriana", "Mercado", "Walmart", etc.
+  city         String
+  state        String?
+  unit         String?  // "kg", "pz", "lt", "g"
+  // Metadata
+  source       String   @default("ai_estimate") // "ai_estimate" | "user_input" | "scraped"
+  confidence   Float    @default(0.7) // 0-1 qué tan seguro está la IA
+  lastChecked  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([city, productName])
+  @@index([category])
 }

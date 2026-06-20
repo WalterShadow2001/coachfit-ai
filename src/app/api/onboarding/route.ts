@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     // Si ya existe, actualizar; si no, crear
     const existing = await db.userProfile.findFirst()
-    const data = {
+    const data: any = {
       name: String(body.name),
       age: Number(body.age),
       gender: String(body.gender),
@@ -49,6 +49,16 @@ export async function POST(req: NextRequest) {
       dislikedFoods: JSON.stringify(body.dislikedFoods || []),
       equipment: JSON.stringify(body.equipment || []),
       goal: String(body.goal),
+    }
+    // Campos opcionales (ubicación y meta de tiempo)
+    if (body.city !== undefined) data.city = body.city || null
+    if (body.state !== undefined) data.state = body.state || null
+    if (body.latitude !== undefined) data.latitude = body.latitude ? Number(body.latitude) : null
+    if (body.longitude !== undefined) data.longitude = body.longitude ? Number(body.longitude) : null
+    if (body.locationDetected !== undefined) data.locationDetected = Boolean(body.locationDetected)
+    if (body.targetWeeks !== undefined) data.targetWeeks = body.targetWeeks ? Number(body.targetWeeks) : null
+    if (body.targetDate !== undefined && body.targetDate) {
+      data.targetDate = new Date(body.targetDate)
     }
 
     let profile
