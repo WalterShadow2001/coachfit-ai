@@ -29,9 +29,11 @@ CoachFit AI es una app de coaching personal inteligente que:
 3. **Te "molesta" con notificaciones** inteligentes que respetan tu horario laboral
 4. **Sin opción de omitir**: solo "Ya lo hice" o "Más tarde" — se hace o se hace
 5. **Responde con voz**: habla y la IA transcribe e interpreta tu respuesta
-6. **Funciona offline** con base de datos local
-7. **Sincroniza con la nube** con Turso cuando hay internet
-8. **Te enseña qué mejorar** con análisis de adherencia y mensajes motivadores
+6. **Conecta con Samsung Health**: pasos, calorías, ritmo cardíaco, ejercicios automáticos
+7. **Horarios múltiples por día**: L-V diferente a sábado, diferente a domingo (iglesia)
+8. **Funciona offline** con base de datos local
+9. **Sincroniza con la nube** con Turso cuando hay internet
+10. **Te enseña qué mejorar** con análisis de adherencia y mensajes motivadores
 
 ## ✨ Características
 
@@ -71,6 +73,29 @@ CoachFit AI es una app de coaching personal inteligente que:
 - Auto-detección de preferencia del sistema
 - Persistencia en localStorage
 - Tema emerald primary en ambos modos
+
+### ⌚ Samsung Health / Health Connect
+- Conecta tu reloj Samsung o Galaxy Watch
+- Lee automáticamente:
+  - Pasos diarios
+  - Calorías activas y en reposo
+  - Distancia recorrida
+  - Minutos de actividad moderada+
+  - Ritmo cardíaco promedio y máximo
+  - Horas de sueño
+  - Ejercicios detectados (se registran en ExerciseLog automáticamente)
+- En PWA: entrada manual disponible
+- En APK: usa Health Connect (Android 14+) o @capacitor-community/health
+
+### 📅 Horarios múltiples por día
+- Define bloques de horario diferentes para diferentes días:
+  - **Lunes-Viernes**: trabajo 9-18, lunch 14-15
+  - **Sábado**: trabajo 10-14, lunch 14-15
+  - **Domingo**: día libre (iglesia), lunch 14-15
+- Agrega/edita/elimina bloques en el onboarding
+- Marca bloques como "día libre" (no trabajo)
+- El sistema de notificaciones usa el horario correcto según el día
+- La IA personaliza el plan según los múltiples horarios
 
 ### 💾 Base de datos (local + nube)
 - **Local (SQLite)**: siempre activa, funciona sin internet
@@ -253,6 +278,58 @@ await LocalNotifications.schedule({
     extra: { type: 'meal' }
   }]
 })
+```
+
+### Samsung Health / Health Connect en APK
+Para leer datos de Samsung Health nativamente:
+
+```bash
+bun add @capacitor-community/health
+```
+
+```typescript
+// src/lib/health-native.ts
+import { Health } from '@capacitor-community/health'
+
+// Pedir permisos
+const granted = await Health.requestAuthorization({
+  read: [
+    'steps', 'calories.active', 'calories.basal', 'distance',
+    'activity', 'heart_rate', 'sleep', 'workouts'
+  ]
+})
+
+if (!granted) throw new Error('Permisos denegados')
+
+// Leer pasos del día
+const today = new Date(); today.setHours(0, 0, 0, 0)
+const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1)
+
+const stepsData = await Health.querySteps({
+  startDate: today,
+  endDate: tomorrow,
+})
+
+// Enviar al backend
+await fetch('/api/health', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    date: today.toISOString().slice(0, 10),
+    steps: stepsData.reduce((sum, d) => sum + d.value, 0),
+    // ... otros datos
+  })
+})
+```
+
+**Requisitos en AndroidManifest.xml:**
+```xml
+<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+<uses-permission android:name="android.permission.BODY_SENSORS" />
+<queries>
+  <package android:name="com.samsung.android.app.health" />
+  <package android:name="com.google.android.apps.healthdata" />
+</queries>
 ```
 
 ### Base de datos local en APK
