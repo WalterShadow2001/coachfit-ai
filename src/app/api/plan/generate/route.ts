@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { generateWeeklyMealPlan, generateWeeklyExercisePlan, type AIProfileSnapshot } from '@/lib/ai'
+import { generateWeeklyMealPlan, generateWeeklyExercisePlan, type AIProfileSnapshot, type ScheduleBlock } from '@/lib/ai'
 
 export async function POST(req: NextRequest) {
   try {
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({
+      include: { schedules: true },
+    })
     if (!profile) {
       return NextResponse.json({ error: 'Completa el onboarding primero' }, { status: 400 })
     }
+
+    const schedules: ScheduleBlock[] = profile.schedules.map(s => ({
+      label: s.label,
+      days: JSON.parse(s.days || '[]'),
+      workStart: s.workStart,
+      workEnd: s.workEnd,
+      lunchStart: s.lunchStart,
+      lunchEnd: s.lunchEnd,
+      isFreeDay: s.isFreeDay,
+      notes: s.notes,
+    }))
 
     const snapshot: AIProfileSnapshot = {
       name: profile.name,
@@ -18,11 +31,7 @@ export async function POST(req: NextRequest) {
       targetWeightKg: profile.targetWeightKg,
       activityLevel: profile.activityLevel,
       budgetPerWeek: profile.budgetPerWeek,
-      workStart: profile.workStart,
-      workEnd: profile.workEnd,
-      workDays: JSON.parse(profile.workDays || '[]'),
-      lunchStart: profile.lunchStart,
-      lunchEnd: profile.lunchEnd,
+      schedules,
       wakeTime: profile.wakeTime,
       sleepTime: profile.sleepTime,
       restrictions: JSON.parse(profile.restrictions || '[]'),

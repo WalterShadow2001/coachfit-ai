@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAppStore } from '@/lib/store'
 import { Loader2, Sparkles, Flame, Apple, Dumbbell, TrendingDown, Bell, ChevronRight } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, BarChart, Bar, CartesianGrid } from 'recharts'
+import SamsungHealthCard from './SamsungHealthCard'
 
 export default function Dashboard() {
   const setView = useAppStore(s => s.setView)
@@ -129,6 +130,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Samsung Health */}
+      <SamsungHealthCard />
 
       {/* Plan del día */}
       <Card>

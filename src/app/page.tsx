@@ -25,6 +25,10 @@ export default function Home() {
         if (j.profile) {
           setHasProfile(true)
           setView('dashboard')
+        } else {
+          // Si no hay perfil en backend, asegurar que el store refleje eso
+          setHasProfile(false)
+          setView('onboarding')
         }
       })
       .catch(() => {})

@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 // Programa las notificaciones del día según el perfil del usuario y su plan
+// Respeta los horarios específicos por día (WorkSchedule)
 export async function POST() {
   try {
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({
+      include: { schedules: true },
+    })
     if (!profile) return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
 
     const settings = await db.settings.findUnique({ where: { id: 'default' } })
@@ -15,8 +18,20 @@ export async function POST() {
     const today = new Date()
     const todayStr = today.toISOString().slice(0, 10)
     const dayName = today.toLocaleDateString('es-MX', { weekday: 'long' }).toLowerCase()
-    const workDays: string[] = JSON.parse(profile.workDays || '[]')
-    const isWorkDay = workDays.some(d => dayName.startsWith(d.toLowerCase().slice(0, 3)))
+
+    // Buscar el horario que aplica hoy
+    // Día de la semana en formato corto (mon, tue, wed, thu, fri, sat, sun)
+    const dayShort = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][today.getDay()]
+
+    const todaySchedule = profile.schedules.find(s => {
+      const days: string[] = JSON.parse(s.days || '[]')
+      return days.some(d => d.toLowerCase().startsWith(dayShort))
+    })
+
+    if (!todaySchedule) {
+      // Si no hay horario para hoy, solo programar comidas básicas (desayuno/cena)
+      console.log('No schedule found for', dayName, '- scheduling minimal notifications')
+    }
 
     // Limpiar notificaciones pendientes de hoy que aún no se han disparado
     const startToday = new Date(todayStr + 'T00:00:00')
@@ -47,9 +62,8 @@ export async function POST() {
       todaysExercise = (parsed.days || []).find((d: any) => d.day?.toLowerCase() === dayName)
     }
 
-    // === Desayuno ===
-    const breakfastTime = parseTime(todayStr, subtractMinutes(profile.wakeTime, 0))
-    // 15 min después de despertar
+    // === DESAYUNO === (15 min después de despertar, siempre)
+    const breakfastTime = parseTime(todayStr, profile.wakeTime)
     breakfastTime.setMinutes(breakfastTime.getMinutes() + 15)
     if (breakfastTime > today) {
       toSchedule.push({
@@ -63,22 +77,24 @@ export async function POST() {
       })
     }
 
-    // === Lunch ===
-    const lunchTime = parseTime(todayStr, profile.lunchStart)
-    if (lunchTime > today) {
-      toSchedule.push({
-        type: 'meal',
-        title: 'Hora de comer',
-        body: todaysMeals?.lunch?.name
-          ? `Plan: ${todaysMeals.lunch.name}`
-          : 'Es tu hora de comida. ¿Qué vas a comer?',
-        scheduledFor: lunchTime,
-        payload: { mealType: 'lunch', planned: todaysMeals?.lunch },
-      })
+    // === LUNCH === (solo si hay horario de lunch hoy)
+    if (todaySchedule) {
+      const lunchTime = parseTime(todayStr, todaySchedule.lunchStart)
+      if (lunchTime > today) {
+        const msg = todaySchedule.isFreeDay
+          ? (todaysMeals?.lunch?.name || 'Es tu día libre. Disfruta tu comida.')
+          : `Plan: ${todaysMeals?.lunch?.name || 'Es tu hora de comida'}. ${todaySchedule.label}.`
+        toSchedule.push({
+          type: 'meal',
+          title: todaySchedule.isFreeDay ? 'Hora de comer (día libre)' : `Hora de comer - ${todaySchedule.label}`,
+          body: msg,
+          scheduledFor: lunchTime,
+          payload: { mealType: 'lunch', planned: todaysMeals?.lunch, scheduleLabel: todaySchedule.label },
+        })
+      }
     }
 
-    // === Cena ===
-    // 2-3 horas antes de dormir
+    // === CENA === (2-3 horas antes de dormir)
     const dinnerTime = parseTime(todayStr, profile.sleepTime)
     dinnerTime.setHours(dinnerTime.getHours() - 3)
     if (dinnerTime > today) {
@@ -93,15 +109,15 @@ export async function POST() {
       })
     }
 
-    // === Ejercicio ===
+    // === EJERCICIO === (si hay plan hoy)
     if (todaysExercise && todaysExercise.exercises?.length > 0) {
-      // Si es día laboral: ejercicio después del trabajo (30 min después de workEnd)
-      // Si no: ejercicio 1 hora después de despertar
       let exerciseTime: Date
-      if (isWorkDay) {
-        exerciseTime = parseTime(todayStr, profile.workEnd)
+      if (todaySchedule && !todaySchedule.isFreeDay) {
+        // Día laboral: ejercicio 30 min después del trabajo
+        exerciseTime = parseTime(todayStr, todaySchedule.workEnd)
         exerciseTime.setMinutes(exerciseTime.getMinutes() + 30)
       } else {
+        // Día libre o sin horario: 1 hora después de despertar
         exerciseTime = parseTime(todayStr, profile.wakeTime)
         exerciseTime.setHours(exerciseTime.getHours() + 1)
       }
@@ -111,12 +127,12 @@ export async function POST() {
           title: 'Hora de entrenar',
           body: `${todaysExercise.focus}: ${todaysExercise.exercises.length} ejercicios, ${todaysExercise.totalMinutes || 30} min`,
           scheduledFor: exerciseTime,
-          payload: { planned: todaysExercise },
+          payload: { planned: todaysExercise, scheduleLabel: todaySchedule?.label },
         })
       }
     }
 
-    // === Feedback al final del día ===
+    // === FEEDBACK al final del día ===
     const feedbackTime = parseTime(todayStr, profile.sleepTime)
     feedbackTime.setMinutes(feedbackTime.getMinutes() - 30)
     if (feedbackTime > today) {
@@ -143,7 +159,18 @@ export async function POST() {
       )
     )
 
-    return NextResponse.json({ scheduled: created.length, items: created })
+    return NextResponse.json({
+      scheduled: created.length,
+      items: created,
+      todaySchedule: todaySchedule ? {
+        label: todaySchedule.label,
+        isFreeDay: todaySchedule.isFreeDay,
+        workStart: todaySchedule.workStart,
+        workEnd: todaySchedule.workEnd,
+        lunchStart: todaySchedule.lunchStart,
+        lunchEnd: todaySchedule.lunchEnd,
+      } : null,
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -154,12 +181,4 @@ function parseTime(dateStr: string, timeStr: string): Date {
   const d = new Date(dateStr + 'T00:00:00')
   d.setHours(h, m, 0, 0)
   return d
-}
-
-function subtractMinutes(timeStr: string, minutes: number): string {
-  const [h, m] = timeStr.split(':').map(Number)
-  const total = h * 60 + m - minutes
-  const nh = Math.floor(total / 60)
-  const nm = total % 60
-  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
 }

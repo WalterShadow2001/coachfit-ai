@@ -37,6 +37,17 @@ function getZAI(): ZAI {
   return zaiInstance
 }
 
+export interface ScheduleBlock {
+  label: string
+  days: string[]
+  workStart: string
+  workEnd: string
+  lunchStart: string
+  lunchEnd: string
+  isFreeDay: boolean
+  notes?: string | null
+}
+
 export interface AIProfileSnapshot {
   name: string
   age: number
@@ -46,11 +57,7 @@ export interface AIProfileSnapshot {
   targetWeightKg: number
   activityLevel: string
   budgetPerWeek: number
-  workStart: string
-  workEnd: string
-  workDays: string[]
-  lunchStart: string
-  lunchEnd: string
+  schedules: ScheduleBlock[]
   wakeTime: string
   sleepTime: string
   restrictions: string[]
@@ -157,8 +164,8 @@ DATOS DEL USUARIO:
 - Nivel de actividad: ${profile.activityLevel}
 - Objetivo: ${profile.goal === 'lose' ? 'bajar de peso' : profile.goal === 'gain' ? 'subir de masa muscular' : 'mantener'}
 - Presupuesto semanal: $${profile.budgetPerWeek} MXN
-- Horario trabajo: ${profile.workStart} a ${profile.workEnd} (${profile.workDays.join(', ')})
-- Hora de comida (lunch): ${profile.lunchStart} a ${profile.lunchEnd}
+- Horarios semanales:
+${profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `trabaja ${s.workStart} a ${s.workEnd}`}, lunch ${s.lunchStart} a ${s.lunchEnd} (días: ${s.days.join(', ')})`).join('\n')}
 - Despierta: ${profile.wakeTime}, Duerme: ${profile.sleepTime}
 - Restricciones dietéticas: ${profile.restrictions.join(', ') || 'ninguna'}
 - Alergias: ${profile.allergies.join(', ') || 'ninguna'}
@@ -193,7 +200,8 @@ REQUISITOS:
 - Comidas REALISTAS con ingredientes disponibles en México (Mercado, Oxxo, supermercado)
 - Respeta presupuesto (estimatedCost <= ${profile.budgetPerWeek})
 - Evita alérgenos y foods que no le gustan
-- Lunch debe ser apto para preparar/transportar si trabaja fuera
+- Lunch debe ser apto para preparar/transportar si trabaja fuera (considera los días laborales)
+- Considera que el horario de lunch cambia según el día (ver lista de horarios)
 - Breakfast rápido (max 15 min prep) ya que probablemente tiene prisa en la mañana
 
 Responde SOLO con el JSON, sin texto adicional.`
@@ -260,7 +268,8 @@ DATOS:
 - Objetivo: ${profile.goal === 'lose' ? 'bajar de peso (prioridad cardio + fuerza)' : profile.goal === 'gain' ? 'ganar masa muscular (prioridad fuerza)' : 'mantener'}
 - Peso: ${profile.weightKg} kg, Altura: ${profile.heightCm} cm, Edad: ${profile.age}
 - Nivel actividad: ${profile.activityLevel}
-- Horario trabajo: ${profile.workStart}-${profile.workEnd} (días: ${profile.workDays.join(', ')})
+- Horarios semanales:
+${profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `trabaja ${s.workStart}-${s.workEnd}`} (días: ${s.days.join(', ')})`).join('\n')}
 - Despierta: ${profile.wakeTime}, Duerme: ${profile.sleepTime}
 - Equipo disponible: ${profile.equipment.join(', ') || 'solo peso corporal'}
 

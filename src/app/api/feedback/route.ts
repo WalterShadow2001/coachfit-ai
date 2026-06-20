@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { generateDailyFeedback, type AIProfileSnapshot } from '@/lib/ai'
+import { generateDailyFeedback, type AIProfileSnapshot, type ScheduleBlock } from '@/lib/ai'
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,7 +22,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const date = body.date || new Date().toISOString().slice(0, 10)
 
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({
+      include: { schedules: true },
+    })
     if (!profile) {
       return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
     }
@@ -57,6 +59,17 @@ export async function POST(req: NextRequest) {
       where: { date: yesterday },
     })
 
+    const schedules: ScheduleBlock[] = profile.schedules.map(s => ({
+      label: s.label,
+      days: JSON.parse(s.days || '[]'),
+      workStart: s.workStart,
+      workEnd: s.workEnd,
+      lunchStart: s.lunchStart,
+      lunchEnd: s.lunchEnd,
+      isFreeDay: s.isFreeDay,
+      notes: s.notes,
+    }))
+
     const snapshot: AIProfileSnapshot = {
       name: profile.name,
       age: profile.age,
@@ -66,11 +79,7 @@ export async function POST(req: NextRequest) {
       targetWeightKg: profile.targetWeightKg,
       activityLevel: profile.activityLevel,
       budgetPerWeek: profile.budgetPerWeek,
-      workStart: profile.workStart,
-      workEnd: profile.workEnd,
-      workDays: JSON.parse(profile.workDays || '[]'),
-      lunchStart: profile.lunchStart,
-      lunchEnd: profile.lunchEnd,
+      schedules,
       wakeTime: profile.wakeTime,
       sleepTime: profile.sleepTime,
       restrictions: JSON.parse(profile.restrictions || '[]'),

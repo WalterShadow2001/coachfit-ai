@@ -3,7 +3,9 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({
+      include: { schedules: true },
+    })
     const settings = await db.settings.findUnique({ where: { id: 'default' } })
     return NextResponse.json({ profile, settings })
   } catch (e: any) {
@@ -16,11 +18,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
 
     // Validación mínima
-    const required = ['name', 'age', 'gender', 'heightCm', 'weightKg', 'targetWeightKg', 'activityLevel', 'budgetPerWeek', 'workStart', 'workEnd', 'workDays', 'lunchStart', 'lunchEnd', 'wakeTime', 'sleepTime', 'goal']
+    const required = ['name', 'age', 'gender', 'heightCm', 'weightKg', 'targetWeightKg', 'activityLevel', 'budgetPerWeek', 'wakeTime', 'sleepTime', 'goal']
     for (const f of required) {
       if (body[f] === undefined || body[f] === null || body[f] === '') {
         return NextResponse.json({ error: `Campo requerido: ${f}` }, { status: 400 })
       }
+    }
+
+    // Validar que tenga al menos 1 horario
+    const schedules = body.schedules || []
+    if (schedules.length === 0) {
+      return NextResponse.json({ error: 'Debes agregar al menos 1 horario' }, { status: 400 })
     }
 
     // Si ya existe, actualizar; si no, crear
@@ -34,11 +42,6 @@ export async function POST(req: NextRequest) {
       targetWeightKg: Number(body.targetWeightKg),
       activityLevel: String(body.activityLevel),
       budgetPerWeek: Number(body.budgetPerWeek),
-      workStart: String(body.workStart),
-      workEnd: String(body.workEnd),
-      workDays: JSON.stringify(body.workDays || []),
-      lunchStart: String(body.lunchStart),
-      lunchEnd: String(body.lunchEnd),
       wakeTime: String(body.wakeTime),
       sleepTime: String(body.sleepTime),
       restrictions: JSON.stringify(body.restrictions || []),
@@ -51,8 +54,40 @@ export async function POST(req: NextRequest) {
     let profile
     if (existing) {
       profile = await db.userProfile.update({ where: { id: existing.id }, data })
+      // Borrar horarios anteriores y crear nuevos
+      await db.workSchedule.deleteMany({ where: { profileId: existing.id } })
+      for (const s of schedules) {
+        await db.workSchedule.create({
+          data: {
+            profileId: existing.id,
+            label: String(s.label || 'Horario'),
+            days: JSON.stringify(s.days || []),
+            workStart: String(s.workStart || '09:00'),
+            workEnd: String(s.workEnd || '18:00'),
+            lunchStart: String(s.lunchStart || '14:00'),
+            lunchEnd: String(s.lunchEnd || '15:00'),
+            isFreeDay: Boolean(s.isFreeDay || false),
+            notes: s.notes || null,
+          },
+        })
+      }
     } else {
       profile = await db.userProfile.create({ data })
+      for (const s of schedules) {
+        await db.workSchedule.create({
+          data: {
+            profileId: profile.id,
+            label: String(s.label || 'Horario'),
+            days: JSON.stringify(s.days || []),
+            workStart: String(s.workStart || '09:00'),
+            workEnd: String(s.workEnd || '18:00'),
+            lunchStart: String(s.lunchStart || '14:00'),
+            lunchEnd: String(s.lunchEnd || '15:00'),
+            isFreeDay: Boolean(s.isFreeDay || false),
+            notes: s.notes || null,
+          },
+        })
+      }
     }
 
     // Asegurar settings por defecto
@@ -62,8 +97,15 @@ export async function POST(req: NextRequest) {
       create: { id: 'default' },
     })
 
-    return NextResponse.json({ profile })
+    // Devolver con horarios
+    const profileWithSchedules = await db.userProfile.findUnique({
+      where: { id: profile.id },
+      include: { schedules: true },
+    })
+
+    return NextResponse.json({ profile: profileWithSchedules })
   } catch (e: any) {
+    console.error('Onboarding error:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

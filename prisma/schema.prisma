@@ -26,11 +26,7 @@ model UserProfile {
   targetWeightKg  Float
   activityLevel   String   // "sedentary" | "light" | "moderate" | "active"
   budgetPerWeek   Float    // presupuesto semanal en MXN
-  workStart       String   // "09:00"
-  workEnd         String   // "18:00"
-  workDays        String   // JSON: ["mon","tue","wed","thu","fri"]
-  lunchStart      String   // "14:00"
-  lunchEnd        String   // "15:00"
+  // Horarios base (defaults, overrideados por WorkSchedule)
   wakeTime        String   // "07:00"
   sleepTime       String   // "23:00"
   restrictions    String   // JSON: dietary restrictions
@@ -38,11 +34,38 @@ model UserProfile {
   dislikedFoods   String   // JSON
   equipment       String   // JSON: ["dumbbells","resistance_band","none"]
   goal            String   // "lose" | "maintain" | "gain"
+  // Samsung Health
+  samsungHealthConnected Boolean @default(false)
+  samsungHealthLastSync  DateTime?
   // Campos para sincronización
-  syncStatus      String   @default("synced") // "pending" | "synced" | "conflict"
+  syncStatus      String   @default("synced")
   lastModified    DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // Relación 1:N con horarios
+  schedules       WorkSchedule[]
+}
+
+model WorkSchedule {
+  id           String   @id @default(cuid())
+  profileId    String
+  label        String   // "Trabajo L-V", "Sábado", "Domingo Iglesia"
+  days         String   // JSON: ["mon","tue","wed","thu","fri"]
+  workStart    String   // "09:00"
+  workEnd      String   // "18:00"
+  lunchStart   String   // "14:00"
+  lunchEnd     String   // "15:00"
+  // Si es "día libre" (no trabajo, pero define horario distinto)
+  isFreeDay    Boolean  @default(false)
+  // Notas del usuario
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile      UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }
 
 model MealPlan {
@@ -73,8 +96,8 @@ model MealLog {
   notes        String?
   loggedAt     DateTime @default(now())
   onPlan       Boolean?
-  syncStatus   String   @default("pending") // los logs se sincronizan cuando hay conexión
-  source       String   @default("manual") // "manual" | "voice"
+  syncStatus   String   @default("pending")
+  source       String   @default("manual") // "manual" | "voice" | "samsung_health"
 }
 
 model ExerciseLog {
@@ -88,7 +111,7 @@ model ExerciseLog {
   loggedAt     DateTime @default(now())
   onPlan       Boolean?
   syncStatus   String   @default("pending")
-  source       String   @default("manual") // "manual" | "voice"
+  source       String   @default("manual") // "manual" | "voice" | "samsung_health"
 }
 
 model Notification {
@@ -126,4 +149,27 @@ model Settings {
   cloudSyncEnabled     Boolean  @default(false)
   lastSyncAt           DateTime?
   updatedAt            DateTime @updatedAt
+}
+
+// Datos sincronizados desde Samsung Health / Health Connect
+model HealthData {
+  id           String   @id @default(cuid())
+  date         DateTime // día
+  steps        Int      @default(0)
+  caloriesBurned Int    @default(0) // kcal activas
+  caloriesResting Int   @default(0) // kcal en reposo
+  distanceMeters Float  @default(0) // metros caminados/corridos
+  activeMinutes Int     @default(0) // minutos de actividad moderada+
+  heartRateAvg Int?     // bpm promedio
+  heartRateMax Int?
+  sleepHours   Float?   // horas de sueño
+  // Ejercicios específicos (JSON array)
+  exercises    String   @default("[]") // [{name, type, duration, calories, startTime, endTime}]
+  // Sync metadata
+  source       String   @default("samsung_health") // "samsung_health" | "health_connect" | "manual"
+  syncStatus   String   @default("pending")
+  syncedAt     DateTime @default(now())
+
+  @@unique([date])
+  @@index([date])
 }

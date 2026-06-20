@@ -10,8 +10,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Switch } from '@/components/ui/switch'
 import { useAppStore } from '@/lib/store'
-import { Loader2, ChevronLeft, ChevronRight, Dumbbell, Salad, Wallet, Clock, Heart } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Dumbbell, Salad, Wallet, Clock, Heart, Plus, Trash2, Calendar } from 'lucide-react'
+import { toast } from 'sonner'
 
 const DAYS = [
   { id: 'mon', label: 'Lun' },
@@ -25,6 +27,18 @@ const DAYS = [
 
 const DIETARY = ['Vegetariano', 'Vegano', 'Sin gluten', 'Sin lactosa', 'Bajo en carbohidratos', 'Cetogénico', 'Sin cerdo', 'Sin mariscos']
 const EQUIPMENT = ['Mancuernas', 'Bandas de resistencia', 'Barra de dominadas', 'Banco', 'Pelota de yoga', 'Sin equipo (peso corporal)']
+
+interface ScheduleBlock {
+  id: string
+  label: string
+  days: string[]
+  workStart: string
+  workEnd: string
+  lunchStart: string
+  lunchEnd: string
+  isFreeDay: boolean
+  notes?: string
+}
 
 export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(1)
@@ -42,11 +56,6 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     targetWeightKg: '',
     activityLevel: 'sedentary',
     budgetPerWeek: '1500',
-    workStart: '09:00',
-    workEnd: '18:00',
-    workDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
-    lunchStart: '14:00',
-    lunchEnd: '15:00',
     wakeTime: '07:00',
     sleepTime: '23:00',
     restrictions: [],
@@ -56,6 +65,42 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     goal: 'lose',
     allergyInput: '',
     dislikeInput: '',
+    // Horarios múltiples - por defecto L-V trabajo + sábado trabajo + domingo libre
+    schedules: [
+      {
+        id: 's1',
+        label: 'Trabajo Lunes-Viernes',
+        days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        workStart: '09:00',
+        workEnd: '18:00',
+        lunchStart: '14:00',
+        lunchEnd: '15:00',
+        isFreeDay: false,
+        notes: '',
+      },
+      {
+        id: 's2',
+        label: 'Sábado (trabajo diferente)',
+        days: ['sat'],
+        workStart: '10:00',
+        workEnd: '14:00',
+        lunchStart: '14:00',
+        lunchEnd: '15:00',
+        isFreeDay: false,
+        notes: 'Horario reducido',
+      },
+      {
+        id: 's3',
+        label: 'Domingo (Iglesia + libre)',
+        days: ['sun'],
+        workStart: '10:00',
+        workEnd: '12:00',
+        lunchStart: '14:00',
+        lunchEnd: '15:00',
+        isFreeDay: true,
+        notes: 'Misa a las 10am',
+      },
+    ],
   })
 
   const set = (k: string, v: any) => setData((d: any) => ({ ...d, [k]: v }))
@@ -65,6 +110,45 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       const arr = d[k] || []
       return { ...d, [k]: arr.includes(v) ? arr.filter((x: string) => x !== v) : [...arr, v] }
     })
+  }
+
+  // === Manejo de horarios múltiples ===
+  const addSchedule = () => {
+    const newId = `s${Date.now()}`
+    set('schedules', [...data.schedules, {
+      id: newId,
+      label: `Horario ${data.schedules.length + 1}`,
+      days: [],
+      workStart: '09:00',
+      workEnd: '18:00',
+      lunchStart: '14:00',
+      lunchEnd: '15:00',
+      isFreeDay: false,
+      notes: '',
+    }])
+  }
+
+  const updateSchedule = (id: string, field: string, value: any) => {
+    set('schedules', data.schedules.map((s: ScheduleBlock) =>
+      s.id === id ? { ...s, [field]: value } : s
+    ))
+  }
+
+  const removeSchedule = (id: string) => {
+    if (data.schedules.length <= 1) {
+      toast.error('Debes tener al menos 1 horario')
+      return
+    }
+    set('schedules', data.schedules.filter((s: ScheduleBlock) => s.id !== id))
+  }
+
+  const toggleScheduleDay = (scheduleId: string, dayId: string) => {
+    const sched = data.schedules.find((s: ScheduleBlock) => s.id === scheduleId)
+    if (!sched) return
+    const newDays = sched.days.includes(dayId)
+      ? sched.days.filter((d: string) => d !== dayId)
+      : [...sched.days, dayId]
+    updateSchedule(scheduleId, 'days', newDays)
   }
 
   const submit = async () => {
@@ -96,8 +180,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const canNext = () => {
     if (step === 1) return data.name && data.age && data.heightCm && data.weightKg && data.targetWeightKg
     if (step === 2) return data.goal && data.activityLevel && data.budgetPerWeek
-    if (step === 3) return data.workStart && data.workEnd && data.lunchStart && data.lunchEnd && data.wakeTime && data.sleepTime && data.workDays.length > 0
-    if (step === 4) return true // restrictions opcional
+    if (step === 3) {
+      // Validar que todos los horarios tengan al menos 1 día
+      return data.schedules.every((s: ScheduleBlock) => s.days.length > 0) && data.schedules.length > 0 && data.wakeTime && data.sleepTime
+    }
+    if (step === 4) return true
     return true
   }
 
@@ -106,21 +193,21 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       <Card className="w-full max-w-lg">
         <CardHeader>
           <div className="flex items-center gap-2 mb-2">
-            <Dumbbell className="w-6 h-6 text-emerald-600" />
+            <Dumbbell className="w-6 h-6 text-primary" />
             <span className="font-bold text-lg">CoachFit AI</span>
           </div>
           <Progress value={(step / 5) * 100} className="h-2 mb-2" />
           <CardTitle className="text-2xl">
             {step === 1 && 'Tu información básica'}
             {step === 2 && 'Tu objetivo y presupuesto'}
-            {step === 3 && 'Tu horario de trabajo'}
+            {step === 3 && 'Tus horarios semanales'}
             {step === 4 && 'Preferencias alimenticias'}
             {step === 5 && 'Equipo disponible'}
           </CardTitle>
           <CardDescription>
             {step === 1 && 'Necesito estos datos para calcular tus calorías diarias'}
             {step === 2 && 'Esto me ayuda a crear un plan realista que puedas cumplir'}
-            {step === 3 && 'Solo te molestaré en tus horas libres y a la hora de comer'}
+            {step === 3 && 'Diferentes días pueden tener horarios diferentes (trabajo, sábado, iglesia, etc.)'}
             {step === 4 && 'Para no recomendarte algo que no puedes o no quieres comer'}
             {step === 5 && 'Para diseñar una rutina de ejercicio que puedas hacer'}
           </CardDescription>
@@ -217,48 +304,151 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
           {step === 3 && (
             <>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2"><Clock className="w-4 h-4" /> Días laborables</div>
-              <div className="flex flex-wrap gap-2">
-                {DAYS.map(d => (
-                  <Label key={d.id} htmlFor={d.id} className={`cursor-pointer px-3 py-2 rounded-lg border ${data.workDays.includes(d.id) ? 'bg-emerald-600 text-white border-emerald-600' : 'hover:bg-muted'}`}>
-                    <Checkbox id={d.id} checked={data.workDays.includes(d.id)} onCheckedChange={() => toggleArr('workDays', d.id)} className="sr-only" />
-                    {d.label}
-                  </Label>
+              {/* Horarios múltiples */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Calendar className="w-4 h-4 text-primary" />
+                    Tus horarios
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={addSchedule}>
+                    <Plus className="w-3 h-3 mr-1" /> Agregar horario
+                  </Button>
+                </div>
+
+                {data.schedules.map((sched: ScheduleBlock, idx: number) => (
+                  <Card key={sched.id} className="border-l-4 border-l-primary">
+                    <CardContent className="p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <Input
+                          value={sched.label}
+                          onChange={e => updateSchedule(sched.id, 'label', e.target.value)}
+                          className="font-medium h-8"
+                          placeholder="Ej. Trabajo L-V, Sábado, Iglesia"
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => removeSchedule(sched.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
+
+                      {/* Días */}
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Días</div>
+                        <div className="flex flex-wrap gap-1">
+                          {DAYS.map(d => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              onClick={() => toggleScheduleDay(sched.id, d.id)}
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${
+                                sched.days.includes(d.id)
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'bg-background hover:bg-muted'
+                              }`}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Free day toggle */}
+                      <div className="flex items-center justify-between gap-2 p-2 bg-muted rounded">
+                        <div>
+                          <div className="text-sm font-medium">Día libre (no trabajo)</div>
+                          <div className="text-xs text-muted-foreground">Marca si es descanso/iglesia/etc</div>
+                        </div>
+                        <Switch
+                          checked={sched.isFreeDay}
+                          onCheckedChange={v => updateSchedule(sched.id, 'isFreeDay', v)}
+                        />
+                      </div>
+
+                      {/* Horarios */}
+                      {!sched.isFreeDay && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Inicio trabajo</Label>
+                            <Input
+                              type="time"
+                              value={sched.workStart}
+                              onChange={e => updateSchedule(sched.id, 'workStart', e.target.value)}
+                              className="h-8"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Fin trabajo</Label>
+                            <Input
+                              type="time"
+                              value={sched.workEnd}
+                              onChange={e => updateSchedule(sched.id, 'workEnd', e.target.value)}
+                              className="h-8"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Inicio comida</Label>
+                          <Input
+                            type="time"
+                            value={sched.lunchStart}
+                            onChange={e => updateSchedule(sched.id, 'lunchStart', e.target.value)}
+                            className="h-8"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Fin comida</Label>
+                          <Input
+                            type="time"
+                            value={sched.lunchEnd}
+                            onChange={e => updateSchedule(sched.id, 'lunchEnd', e.target.value)}
+                            className="h-8"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Notas (opcional)</Label>
+                        <Input
+                          value={sched.notes || ''}
+                          onChange={e => updateSchedule(sched.id, 'notes', e.target.value)}
+                          placeholder="Ej. Misa 10am, gym en la tarde..."
+                          className="h-8"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              {/* Wake/sleep global */}
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t">
                 <div>
-                  <Label htmlFor="ws">Inicio trabajo</Label>
-                  <Input id="ws" type="time" value={data.workStart} onChange={e => set('workStart', e.target.value)} />
-                </div>
-                <div>
-                  <Label htmlFor="we">Fin trabajo</Label>
-                  <Input id="we" type="time" value={data.workEnd} onChange={e => set('workEnd', e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="ls">Inicio lunch</Label>
-                  <Input id="ls" type="time" value={data.lunchStart} onChange={e => set('lunchStart', e.target.value)} />
-                </div>
-                <div>
-                  <Label htmlFor="le">Fin lunch</Label>
-                  <Input id="le" type="time" value={data.lunchEnd} onChange={e => set('lunchEnd', e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="wake">Despierto</Label>
+                  <Label htmlFor="wake">Despierto (general)</Label>
                   <Input id="wake" type="time" value={data.wakeTime} onChange={e => set('wakeTime', e.target.value)} />
                 </div>
                 <div>
-                  <Label htmlFor="sleep">Duermo</Label>
+                  <Label htmlFor="sleep">Duermo (general)</Label>
                   <Input id="sleep" type="time" value={data.sleepTime} onChange={e => set('sleepTime', e.target.value)} />
                 </div>
               </div>
-              <div className="bg-emerald-50 dark:bg-emerald-950 p-3 rounded-lg text-sm text-emerald-800 dark:text-emerald-200">
-                Solo te notificaré sobre comidas en tus horas libres y durante tu lunch.
-                El ejercicio te lo recordaré después del trabajo.
+
+              <div className="bg-emerald-50 dark:bg-emerald-950 p-3 rounded-lg text-sm text-emerald-800 dark:text-emerald-200 flex gap-2">
+                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">Ejemplos de uso:</p>
+                  <p className="text-xs mt-1">• L-V: trabajo 9-18, lunch 14-15</p>
+                  <p className="text-xs">• Sábado: trabajo 10-14, lunch 14-15</p>
+                  <p className="text-xs">• Domingo: día libre (iglesia), lunch 14-15</p>
+                </div>
               </div>
             </>
           )}
@@ -272,7 +462,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                     <Badge
                       key={d}
                       variant={data.restrictions.includes(d) ? 'default' : 'outline'}
-                      className={`cursor-pointer ${data.restrictions.includes(d) ? 'bg-emerald-600' : ''}`}
+                      className={`cursor-pointer ${data.restrictions.includes(d) ? 'bg-primary' : ''}`}
                       onClick={() => toggleArr('restrictions', d)}
                     >
                       {d}
@@ -343,7 +533,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </div>
               </div>
               <div className="bg-emerald-50 dark:bg-emerald-950 p-3 rounded-lg text-sm flex gap-2">
-                <Salad className="w-4 h-4 text-emerald-600 shrink-0" />
+                <Salad className="w-4 h-4 text-primary shrink-0" />
                 <div>
                   <p className="font-medium">¡Listo para empezar!</p>
                   <p className="text-muted-foreground">Al guardar, generaré tu primer plan semanal con la IA y programaré las notificaciones de hoy.</p>
