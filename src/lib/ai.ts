@@ -77,6 +77,17 @@ export interface AIProfileSnapshot {
   dislikedFoods: string[]
   equipment: string[]
   goal: string
+  // Meta de tiempo (para ajustar calorías objetivo)
+  targetWeeks?: number | null
+  targetCalories?: number | null
+}
+
+export interface LocalPriceInfo {
+  productName: string
+  category: string
+  price: number
+  store?: string | null
+  unit?: string | null
 }
 
 export interface MealPlanDay {
@@ -162,7 +173,10 @@ function safeParse<T>(text: string): T | null {
   }
 }
 
-export async function generateWeeklyMealPlan(profile: AIProfileSnapshot): Promise<WeeklyMealPlan> {
+export async function generateWeeklyMealPlan(
+  profile: AIProfileSnapshot,
+  localPrices?: LocalPriceInfo[]
+): Promise<WeeklyMealPlan> {
   const zai = getZAI()
   const systemPrompt = `Eos un nutricionista profesional certificado. Generas planes alimenticios REALISTAS adaptados al presupuesto, horario y restricciones del usuario. Siempre respondes en español de México con ingredientes accesibles. Tu salida DEBE ser JSON válido siguiendo exactamente el esquema solicitado.`
 
@@ -176,6 +190,9 @@ DATOS DEL USUARIO:
 - Nivel de actividad: ${profile.activityLevel}
 - Objetivo: ${profile.goal === 'lose' ? 'bajar de peso' : profile.goal === 'gain' ? 'subir de masa muscular' : 'mantener'}
 - Presupuesto semanal: $${profile.budgetPerWeek} MXN
+${profile.targetCalories ? `- Calorías objetivo por día: ${profile.targetCalories} kcal (calculado según meta de ${profile.targetWeeks} semanas)` : ''}
+${localPrices && localPrices.length > 0 ? `- PRECIOS LOCALES REALES en tu ciudad (USA ESTOS PARA CALCULAR estimatedCost):
+${localPrices.slice(0, 30).map(p => `  • ${p.productName}: $${p.price} MXN${p.store ? ` (en ${p.store})` : ''}`).join('\n')}` : ''}
 - Horarios semanales:
 ${profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `trabaja ${s.workStart} a ${s.workEnd}`}, lunch ${s.lunchStart} a ${s.lunchEnd} (días: ${s.days.join(', ')})`).join('\n')}
 - Despierta: ${profile.wakeTime}, Duerme: ${profile.sleepTime}
@@ -208,9 +225,12 @@ ESQUEMA JSON REQUERIDO (sigue EXACTAMENTE esta estructura):
 
 REQUISITOS:
 - 7 días (lunes a domingo)
-- Calorías diarias calculadas según objetivo (déficit para bajar, superávit para subir)
+${profile.targetCalories ? `- Calorías diarias objetivo: ${profile.targetCalories} kcal (calcula para déficit/superávit según meta)` : '- Calorías diarias calculadas según objetivo (déficit para bajar, superávit para subir)'}
 - Comidas REALISTAS con ingredientes disponibles en México (Mercado, Oxxo, supermercado)
-- Respeta presupuesto (estimatedCost <= ${profile.budgetPerWeek})
+- Respeta presupuesto (estimatedCost <= ${profile.budgetPerWeek})${localPrices && localPrices.length > 0 ? `
+- USA LOS PRECIOS LOCALES PROPORCIONADOS para calcular estimatedCost EXACTO
+- Si los precios sumados exceden el presupuesto, AJUSTA las porciones o cambia ingredientes más baratos
+- estimatedCost debe ser la suma real de los ingredientes según los precios locales` : ''}
 - Evita alérgenos y foods que no le gustan
 - Lunch debe ser apto para preparar/transportar si trabaja fuera (considera los días laborales)
 - Considera que el horario de lunch cambia según el día (ver lista de horarios)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { generateWeeklyMealPlan, generateWeeklyExercisePlan, type AIProfileSnapshot, type ScheduleBlock } from '@/lib/ai'
+import { generateWeeklyMealPlan, generateWeeklyExercisePlan, type AIProfileSnapshot, type ScheduleBlock, type LocalPriceInfo } from '@/lib/ai'
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,6 +22,24 @@ export async function POST(req: NextRequest) {
       notes: s.notes,
     }))
 
+    // Calcular calorías objetivo según meta de peso (si existe)
+    let targetCalories: number | null = null
+    if (profile.targetWeeks && profile.targetWeeks > 0) {
+      const weightDiff = Math.abs(profile.targetWeightKg - profile.weightKg)
+      const totalKcalNeeded = weightDiff * 7700
+      const dailyKcalChange = totalKcalNeeded / (profile.targetWeeks * 7)
+      // TMB (Mifflin-St Jeor)
+      let tmb = 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age
+      tmb = profile.gender === 'male' ? tmb + 5 : tmb - 161
+      const activityFactors: Record<string, number> = {
+        sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725,
+      }
+      const tdee = tmb * (activityFactors[profile.activityLevel] || 1.2)
+      if (profile.goal === 'lose') targetCalories = Math.round(tdee - dailyKcalChange)
+      else if (profile.goal === 'gain') targetCalories = Math.round(tdee + dailyKcalChange)
+      else targetCalories = Math.round(tdee)
+    }
+
     const snapshot: AIProfileSnapshot = {
       name: profile.name,
       age: profile.age,
@@ -39,6 +57,29 @@ export async function POST(req: NextRequest) {
       dislikedFoods: JSON.parse(profile.dislikedFoods || '[]'),
       equipment: JSON.parse(profile.equipment || '[]'),
       goal: profile.goal,
+      targetWeeks: profile.targetWeeks,
+      targetCalories,
+    }
+
+    // Obtener precios locales si el usuario tiene ubicación detectada
+    let localPrices: LocalPriceInfo[] = []
+    if (profile.city) {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const dbPrices = await db.localPrice.findMany({
+        where: {
+          city: profile.city,
+          lastChecked: { gte: thirtyDaysAgo },
+        },
+        take: 30,
+      })
+      localPrices = dbPrices.map(p => ({
+        productName: p.productName,
+        category: p.category,
+        price: p.price,
+        store: p.store,
+        unit: p.unit,
+      }))
     }
 
     const body = await req.json().catch(() => ({}))
@@ -58,7 +99,7 @@ export async function POST(req: NextRequest) {
 
     if (what === 'meal' || what === 'both') {
       try {
-        const mp = await generateWeeklyMealPlan(snapshot)
+        const mp = await generateWeeklyMealPlan(snapshot, localPrices)
         await db.mealPlan.deleteMany({ where: { weekStart: { gte: weekStart } } })
         mealPlan = await db.mealPlan.create({
           data: {
