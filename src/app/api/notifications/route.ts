@@ -46,7 +46,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { id, action } = body // action: 'acknowledge' | 'snooze' | 'skip'
+    const { id, action } = body // action: 'acknowledge' | 'snooze'
     const settings = await db.settings.findUnique({ where: { id: 'default' } })
     const snoozeMin = settings?.snoozeMinutes ?? 15
 
@@ -66,14 +66,6 @@ export async function POST(req: NextRequest) {
       const updated = await db.notification.update({
         where: { id },
         data: { status: 'snoozed', snoozeUntil, retryCount: { increment: 1 } },
-      })
-      return NextResponse.json({ notification: updated })
-    }
-
-    if (action === 'skip') {
-      const updated = await db.notification.update({
-        where: { id },
-        data: { status: 'skipped' },
       })
       return NextResponse.json({ notification: updated })
     }

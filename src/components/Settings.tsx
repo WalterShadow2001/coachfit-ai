@@ -7,13 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Bell, Clock, RefreshCw, Loader2, Save } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Bell, Clock, RefreshCw, Loader2, Save, Cloud, CloudOff, Mic } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [rescheduling, setRescheduling] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [settings, setSettings] = useState<any>({
     notificationsEnabled: true,
     snoozeMinutes: 15,
@@ -21,14 +23,21 @@ export default function Settings() {
     retryIntervalMin: 10,
     quietHoursStart: '22:00',
     quietHoursEnd: '07:00',
+    cloudSyncEnabled: false,
   })
+  const [syncInfo, setSyncInfo] = useState<any>(null)
 
   const load = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/settings')
-      const json = await res.json()
-      if (json.settings) setSettings(json.settings)
+      const [sRes, syncRes] = await Promise.all([
+        fetch('/api/settings'),
+        fetch('/api/sync'),
+      ])
+      const sJson = await sRes.json()
+      const syncJson = await syncRes.json()
+      if (sJson.settings) setSettings((prev: any) => ({ ...prev, ...sJson.settings }))
+      setSyncInfo(syncJson)
     } finally {
       setLoading(false)
     }
@@ -64,6 +73,40 @@ export default function Settings() {
     }
   }
 
+  const toggleCloudSync = async (enable: boolean) => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(enable ? 'Sincronización con nube activada' : 'Modo local únicamente')
+      await load()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const syncNow = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(`Sincronizado: ${data.synced?.total || 0} registros`)
+      await load()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (loading) {
     return <div className="p-4"><Skeleton className="h-96 w-full" /></div>
   }
@@ -74,7 +117,7 @@ export default function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><Bell className="w-5 h-5 text-emerald-500" /> Notificaciones</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Bell className="w-5 h-5 text-primary" /> Notificaciones</CardTitle>
           <CardDescription>Configura cómo y cuándo te molesta tu coach</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -130,6 +173,86 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Sincronización con la nube */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            {settings.cloudSyncEnabled ? <Cloud className="w-5 h-5 text-primary" /> : <CloudOff className="w-5 h-5 text-muted-foreground" />}
+            Sincronización con la nube
+          </CardTitle>
+          <CardDescription>
+            Datos locales en tu dispositivo + respaldo en Turso
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-sm">Activar sync con Turso</div>
+              <div className="text-xs text-muted-foreground">
+                Tus datos se guardan localmente Y en la nube
+              </div>
+            </div>
+            <Switch
+              checked={settings.cloudSyncEnabled}
+              onCheckedChange={toggleCloudSync}
+              disabled={syncing}
+            />
+          </div>
+
+          {syncInfo && (
+            <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Modo actual:</span>
+                <Badge variant={syncInfo.mode === 'cloud' ? 'default' : 'secondary'}>
+                  {syncInfo.mode === 'cloud' ? '☁️ Nube' : '📱 Local únicamente'}
+                </Badge>
+              </div>
+              {syncInfo.lastSyncAt && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Última sync:</span>
+                  <span>{new Date(syncInfo.lastSyncAt).toLocaleString('es-MX')}</span>
+                </div>
+              )}
+              {syncInfo.pending?.total > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Pendientes:</span>
+                  <span className="text-amber-600">{syncInfo.pending.total} registros</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {settings.cloudSyncEnabled && (
+            <Button onClick={syncNow} disabled={syncing} variant="outline" className="w-full">
+              {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+              Sincronizar ahora
+            </Button>
+          )}
+
+          <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
+            <p>📱 <strong>Local (siempre):</strong> La app funciona sin internet</p>
+            <p>☁️ <strong>Nube (opcional):</strong> Respaldo + acceso desde otros dispositivos</p>
+            <p>🔄 Los registros hechos por voz se marcan como pendientes hasta sincronizar</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Voz */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Mic className="w-5 h-5 text-primary" /> Voz a texto con IA</CardTitle>
+          <CardDescription>Responde a notificaciones hablando</CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>🎤 Toca "Responder con voz" en cualquier notificación</p>
+          <p>🧠 La IA transcribe tu audio y extrae: qué comiste/hiciste, calorías, intensidad, si cumpliste el plan</p>
+          <p>⚡ Más rápido que escribir, ideal cuando estás comiendo o entrenando</p>
+          <p className="pt-2 border-t">
+            <strong>Permisos necesarios:</strong> Micrófono (se pide al usar por primera vez)
+          </p>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2"><Clock className="w-5 h-5 text-orange-500" /> Cómo funciona</CardTitle>
@@ -138,9 +261,9 @@ export default function Settings() {
           <p>• Solo te notifico en horas libres (despierto, no en trabajo, fuera de horas silenciosas).</p>
           <p>• A la hora de comer te recuerdo qué comer según tu plan.</p>
           <p>• Después del trabajo te recuerdo hacer ejercicio.</p>
-          <p>• Si dices "Sí" → registro lo que hiciste.</p>
+          <p>• Si dices "Ya lo hice" → registro lo que hiciste (texto o voz).</p>
           <p>• Si dices "Más tarde" → te vuelvo a molestar en {settings.snoozeMinutes} min.</p>
-          <p>• Si dices "Omitir" → me callo hasta el siguiente recordatorio.</p>
+          <p>• No hay opción de omitir: se hace o se hace. Pero puedes posponer.</p>
           <p>• Si ignoras la notificación → te recuerdo cada {settings.retryIntervalMin} min, hasta {settings.maxRetries} veces.</p>
           <p>• Al final del día genero un feedback con IA comparando tu plan vs lo real.</p>
         </CardContent>

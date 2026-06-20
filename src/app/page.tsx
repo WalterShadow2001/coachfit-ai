@@ -10,6 +10,7 @@ import Feedback from '@/components/Feedback'
 import Settings from '@/components/Settings'
 import NotificationBanner from '@/components/NotificationBanner'
 import QuickLog from '@/components/QuickLog'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { Dumbbell, LayoutDashboard, Salad, Plus, Sparkles, Settings as SettingsIcon } from 'lucide-react'
 
 export default function Home() {
@@ -49,17 +50,18 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/30 to-white dark:from-slate-950 dark:to-slate-900">
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-slate-950/80 border-b">
+      <header className="sticky top-0 z-40 backdrop-blur-md bg-background/80 border-b">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center">
-              <Dumbbell className="w-5 h-5 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <Dumbbell className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
               <h1 className="font-bold text-sm leading-tight">CoachFit AI</h1>
               <p className="text-xs text-muted-foreground leading-tight">Tu coach personal</p>
             </div>
           </div>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -78,7 +80,7 @@ export default function Home() {
       <QuickLog />
 
       {/* Bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-950 border-t">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-md border-t">
         <div className="max-w-3xl mx-auto grid grid-cols-5 gap-1 p-2 pb-[env(safe-area-inset-bottom)]">
           <NavButton active={currentView === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard className="w-5 h-5" />} label="Inicio" />
           <NavButton active={currentView === 'plan'} onClick={() => setView('plan')} icon={<Salad className="w-5 h-5" />} label="Plan" />

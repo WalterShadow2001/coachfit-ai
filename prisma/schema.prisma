@@ -1,11 +1,17 @@
 // CoachFit AI - Esquema de base de datos
 // Compatible con Turso (libsql) y SQLite local
+// Para modo offline-first en APK, usar SQLite local y sincronizar con Turso
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
+  // SQLite para desarrollo local / APK offline
+  // Para producción con sync en la nube, cambiar a:
+  //   provider = "libsql"
+  //   url      = env("TURSO_DATABASE_URL")
+  //   directUrl = env("TURSO_AUTH_TOKEN")
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
@@ -32,6 +38,9 @@ model UserProfile {
   dislikedFoods   String   // JSON
   equipment       String   // JSON: ["dumbbells","resistance_band","none"]
   goal            String   // "lose" | "maintain" | "gain"
+  // Campos para sincronización
+  syncStatus      String   @default("synced") // "pending" | "synced" | "conflict"
+  lastModified    DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -42,6 +51,7 @@ model MealPlan {
   weekEnd      DateTime
   content      String   // JSON: full plan
   generatedFor String   // user profile snapshot
+  syncStatus   String   @default("synced")
   createdAt    DateTime @default(now())
 }
 
@@ -50,6 +60,7 @@ model ExercisePlan {
   weekStart    DateTime
   weekEnd      DateTime
   content      String   // JSON: full routine
+  syncStatus   String   @default("synced")
   createdAt    DateTime @default(now())
 }
 
@@ -62,6 +73,8 @@ model MealLog {
   notes        String?
   loggedAt     DateTime @default(now())
   onPlan       Boolean?
+  syncStatus   String   @default("pending") // los logs se sincronizan cuando hay conexión
+  source       String   @default("manual") // "manual" | "voice"
 }
 
 model ExerciseLog {
@@ -74,6 +87,8 @@ model ExerciseLog {
   notes        String?
   loggedAt     DateTime @default(now())
   onPlan       Boolean?
+  syncStatus   String   @default("pending")
+  source       String   @default("manual") // "manual" | "voice"
 }
 
 model Notification {
@@ -82,7 +97,7 @@ model Notification {
   title        String
   body         String
   scheduledFor DateTime
-  status       String   @default("pending") // "pending" | "snoozed" | "acknowledged" | "skipped"
+  status       String   @default("pending") // "pending" | "snoozed" | "acknowledged"
   snoozeUntil  DateTime?
   retryCount   Int      @default(0)
   payload      String?  // JSON with extra data
@@ -95,6 +110,7 @@ model Feedback {
   date         DateTime
   content      String   // markdown feedback
   score        Int?     // 0-100 adherence
+  syncStatus   String   @default("synced")
   createdAt    DateTime @default(now())
 }
 
@@ -106,5 +122,8 @@ model Settings {
   retryIntervalMin     Int      @default(10)
   quietHoursStart      String   @default("22:00")
   quietHoursEnd        String   @default("07:00")
+  // Sync settings
+  cloudSyncEnabled     Boolean  @default(false)
+  lastSyncAt           DateTime?
   updatedAt            DateTime @updatedAt
 }

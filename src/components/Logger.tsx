@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Trash2, Apple, Dumbbell, Check, X } from 'lucide-react'
+import { Plus, Trash2, Apple, Dumbbell, Check, X, Mic, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import VoiceRecorder from './VoiceRecorder'
 
 const MEAL_TYPES = [
   { value: 'breakfast', label: 'Desayuno' },
@@ -46,11 +47,65 @@ export default function Logger() {
   const [exNotes, setExNotes] = useState('')
   const [exOnPlan, setExOnPlan] = useState<boolean | null>(null)
 
+  // IA parsing states
+  const [mealAiParsing, setMealAiParsing] = useState(false)
+  const [exAiParsing, setExAiParsing] = useState(false)
+
   // Logs del día
   const [mealLogs, setMealLogs] = useState<any[]>([])
   const [exerciseLogs, setExerciseLogs] = useState<any[]>([])
 
   const today = new Date().toISOString().slice(0, 10)
+
+  const parseVoiceWithAI = async (text: string, context: 'meal' | 'exercise') => {
+    const setter = context === 'meal' ? setMealAiParsing : setExAiParsing
+    setter(true)
+    try {
+      const res = await fetch('/api/ai-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, context }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error')
+      if (data.parsed) {
+        if (context === 'meal') {
+          if (data.parsed.name) setMealName(data.parsed.name)
+          if (data.parsed.calories) setMealCalories(String(data.parsed.calories))
+          if (data.parsed.onPlan !== undefined && data.parsed.onPlan !== null) setMealOnPlan(data.parsed.onPlan)
+          if (data.parsed.notes) setMealNotes(data.parsed.notes)
+        } else {
+          if (data.parsed.name) setExName(data.parsed.name)
+          if (data.parsed.calories) setExCalories(String(data.parsed.calories))
+          if (data.parsed.duration) setExDuration(String(data.parsed.duration))
+          if (data.parsed.intensity) setExIntensity(data.parsed.intensity)
+          if (data.parsed.onPlan !== undefined && data.parsed.onPlan !== null) setExOnPlan(data.parsed.onPlan)
+          if (data.parsed.notes) setExNotes(data.parsed.notes)
+        }
+        toast.success('IA interpretó tu respuesta ✓')
+      } else {
+        if (context === 'meal') setMealName(text)
+        else setExName(text)
+        toast.info('No pude interpretar todo, revisa los campos')
+      }
+    } catch (e: any) {
+      console.error('AI parse error:', e)
+      if (context === 'meal') setMealName(text)
+      else setExName(text)
+      toast.error('No pude interpretar, puse el texto tal cual')
+    } finally {
+      setter(false)
+    }
+  }
+
+  const handleMealVoice = (text: string) => {
+    setMealNotes(prev => prev ? prev + ' ' + text : text)
+    parseVoiceWithAI(text, 'meal')
+  }
+  const handleExVoice = (text: string) => {
+    setExNotes(prev => prev ? prev + ' ' + text : text)
+    parseVoiceWithAI(text, 'exercise')
+  }
 
   const loadLogs = async () => {
     setLoading(true)
@@ -155,6 +210,16 @@ export default function Logger() {
           <Card>
             <CardHeader><CardTitle className="text-base">Agregar comida</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              {mealAiParsing ? (
+                <div className="flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg">
+                  <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
+                  <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                    IA interpretando tu voz...
+                  </span>
+                </div>
+              ) : (
+                <VoiceRecorder onTranscribed={handleMealVoice} buttonText="Hablar para registrar" />
+              )}
               <div>
                 <Label>Tipo</Label>
                 <Select value={mealType} onValueChange={setMealType}>
@@ -247,6 +312,16 @@ export default function Logger() {
           <Card>
             <CardHeader><CardTitle className="text-base">Agregar ejercicio</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              {exAiParsing ? (
+                <div className="flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg">
+                  <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
+                  <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                    IA interpretando tu voz...
+                  </span>
+                </div>
+              ) : (
+                <VoiceRecorder onTranscribed={handleExVoice} buttonText="Hablar para registrar" />
+              )}
               <div>
                 <Label htmlFor="en">¿Qué ejercicio hiciste?</Label>
                 <Input id="en" value={exName} onChange={e => setExName(e.target.value)} placeholder="Ej. 30 min running, pesas..." />

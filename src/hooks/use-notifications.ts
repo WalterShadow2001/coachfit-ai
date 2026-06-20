@@ -17,7 +17,6 @@ interface NotificationItem {
 export function useNotificationEngine() {
   const activeNotification = useAppStore(s => s.activeNotification)
   const setActiveNotification = useAppStore(s => s.setActiveNotification)
-  const openQuickLog = useAppStore(s => s.openQuickLog)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const notifyingRef = useRef(false)
 
@@ -65,15 +64,9 @@ export function useNotificationEngine() {
     })
     setActiveNotification(null)
     notifyingRef.current = false
-    // Abrir quick log si era una notificación de comida o ejercicio
-    const cached = activeNotification
-    if (cached && (cached.type === 'meal' || cached.type === 'exercise')) {
-      const payload = cached.payload ? JSON.parse(cached.payload) : null
-      openQuickLog({ ...payload, type: cached.type, notificationId: id })
-    }
     // Re-check tras 1s
     setTimeout(checkServer, 1000)
-  }, [activeNotification, setActiveNotification, openQuickLog, checkServer])
+  }, [setActiveNotification, checkServer])
 
   const snooze = useCallback(async (id: string) => {
     await fetch('/api/notifications', {
@@ -86,18 +79,20 @@ export function useNotificationEngine() {
     setTimeout(checkServer, 1000)
   }, [setActiveNotification, checkServer])
 
-  const skip = useCallback(async (id: string) => {
+  // acknowledgeWithVoice: marca la notificación como acknowledged SIN abrir el quick log automáticamente
+  // (el componente caller abre el modal de voz)
+  const acknowledgeWithVoice = useCallback(async (id: string) => {
     await fetch('/api/notifications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action: 'skip' }),
+      body: JSON.stringify({ id, action: 'acknowledge' }),
     })
     setActiveNotification(null)
     notifyingRef.current = false
     setTimeout(checkServer, 1000)
   }, [setActiveNotification, checkServer])
 
-  return { activeNotification, acknowledge, snooze, skip, checkServer }
+  return { activeNotification, acknowledge, snooze, acknowledgeWithVoice, checkServer }
 }
 
 function showSystemNotification(notif: NotificationItem) {

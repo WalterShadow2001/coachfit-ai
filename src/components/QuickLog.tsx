@@ -9,8 +9,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useAppStore } from '@/lib/store'
-import { Loader2, Check, X } from 'lucide-react'
+import { Loader2, Check, X, Mic, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import VoiceRecorder from './VoiceRecorder'
 
 export default function QuickLog() {
   const { quickLogOpen, quickLogPayload, closeQuickLog } = useAppStore()
@@ -21,6 +22,7 @@ export default function QuickLog() {
   const [onPlan, setOnPlan] = useState<boolean | null>(null)
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [aiParsing, setAiParsing] = useState(false)
 
   useEffect(() => {
     if (quickLogPayload) {
@@ -35,6 +37,50 @@ export default function QuickLog() {
   if (!quickLogOpen || !quickLogPayload) return null
 
   const isMeal = quickLogPayload.type === 'meal'
+  const voiceMode = quickLogPayload.voice === true
+
+  // IA parser: si el usuario habla "comí pollo con arroz, 500 calorías, en plan"
+  // la IA debe extraer structured data
+  const parseWithAI = async (spokenText: string) => {
+    setAiParsing(true)
+    try {
+      const res = await fetch('/api/ai-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: spokenText,
+          context: isMeal ? 'meal' : 'exercise',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error')
+      if (data.parsed) {
+        if (data.parsed.name) setName(data.parsed.name)
+        if (data.parsed.calories) setCalories(String(data.parsed.calories))
+        if (data.parsed.duration) setDuration(String(data.parsed.duration))
+        if (data.parsed.intensity) setIntensity(data.parsed.intensity)
+        if (data.parsed.onPlan !== undefined && data.parsed.onPlan !== null) setOnPlan(data.parsed.onPlan)
+        if (data.parsed.notes) setNotes(data.parsed.notes)
+        toast.success('IA interpretó tu respuesta ✓')
+      } else {
+        // Si no pudo parsear, al menos pon el texto como nombre
+        setName(spokenText)
+        toast.info('No pude interpretar todo, revisa los campos')
+      }
+    } catch (e: any) {
+      console.error('AI parse error:', e)
+      setName(spokenText)
+      toast.error('No pude interpretar, puse el texto tal cual')
+    } finally {
+      setAiParsing(false)
+    }
+  }
+
+  const handleVoiceTranscription = (text: string) => {
+    setNotes(prev => prev ? prev + ' ' + text : text)
+    // También intentar parsear con IA
+    parseWithAI(text)
+  }
 
   const submit = async () => {
     if (!name.trim()) {
@@ -77,11 +123,16 @@ export default function QuickLog() {
 
   return (
     <Dialog open={quickLogOpen} onOpenChange={(v) => !v && closeQuickLog()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isMeal ? '¿Qué comiste?' : '¿Qué ejercicio hiciste?'}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {voiceMode && <Mic className="w-5 h-5 text-emerald-600" />}
+            {voiceMode ? 'Cuéntame con voz' : isMeal ? '¿Qué comiste?' : '¿Qué ejercicio hiciste?'}
+          </DialogTitle>
           <DialogDescription>
-            Registra rápido lo que hiciste. La IA lo comparará con tu plan.
+            {voiceMode
+              ? 'Toca el botón y dime qué hiciste. La IA interpretará tu respuesta.'
+              : 'Registra rápido lo que hiciste. La IA lo comparará con tu plan.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -93,9 +144,26 @@ export default function QuickLog() {
             </div>
           )}
 
+          {/* Voice recorder (siempre disponible, pero especialmente en voice mode) */}
+          <div className={voiceMode ? '' : 'opacity-90'}>
+            {aiParsing ? (
+              <div className="flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg">
+                <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
+                <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                  IA interpretando tu respuesta...
+                </span>
+              </div>
+            ) : (
+              <VoiceRecorder
+                onTranscribed={handleVoiceTranscription}
+                buttonText={voiceMode ? 'Toca para hablar' : 'Responder con voz'}
+              />
+            )}
+          </div>
+
           <div>
             <Label htmlFor="qn">{isMeal ? '¿Qué comiste?' : '¿Qué ejercicio hiciste?'}</Label>
-            <Input id="qn" value={name} onChange={e => setName(e.target.value)} placeholder={isMeal ? 'Ej. Pollo con arroz' : 'Ej. 30 min caminata'} autoFocus />
+            <Input id="qn" value={name} onChange={e => setName(e.target.value)} placeholder={isMeal ? 'Ej. Pollo con arroz' : 'Ej. 30 min caminata'} autoFocus={!voiceMode} />
           </div>
 
           {!isMeal && (

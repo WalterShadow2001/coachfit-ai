@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
         calories: body.calories ? Number(body.calories) : null,
         notes: body.notes || null,
         onPlan: body.onPlan === undefined ? null : Boolean(body.onPlan),
+        source: body.source === 'voice' ? 'voice' : 'manual',
+        syncStatus: 'pending',
       },
     })
     return NextResponse.json({ log })
