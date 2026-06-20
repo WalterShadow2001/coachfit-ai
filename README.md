@@ -29,11 +29,14 @@ CoachFit AI es una app de coaching personal inteligente que:
 3. **Te "molesta" con notificaciones** inteligentes que respetan tu horario laboral
 4. **Sin opción de omitir**: solo "Ya lo hice" o "Más tarde" — se hace o se hace
 5. **Responde con voz**: habla y la IA transcribe e interpreta tu respuesta
-6. **Conecta con Samsung Health**: pasos, calorías, ritmo cardíaco, ejercicios automáticos
-7. **Horarios múltiples por día**: L-V diferente a sábado, diferente a domingo (iglesia)
-8. **Funciona offline** con base de datos local
-9. **Sincroniza con la nube** con Turso cuando hay internet
-10. **Te enseña qué mejorar** con análisis de adherencia y mensajes motivadores
+6. **Conecta con Samsung Health Y Google Fit**: pasos, calorías, ritmo cardíaco, ejercicios automáticos
+7. **Ritmo cardíaco en tiempo real**: monitoreo continuo y medición on-demand
+8. **GPS para rutas de carrera**: graba correr, ciclismo, caminata o senderismo con mapa
+9. **IA adaptativa**: si no cumples, ajusta SOLO el ejercicio (sin tocar tu dieta)
+10. **Horarios múltiples por día**: L-V diferente a sábado, diferente a domingo (iglesia)
+11. **Funciona offline** con base de datos local
+12. **Sincroniza con la nube** con Turso cuando hay internet
+13. **Te enseña qué mejorar** con análisis de adherencia y mensajes motivadores
 
 ## ✨ Características
 
@@ -74,8 +77,8 @@ CoachFit AI es una app de coaching personal inteligente que:
 - Persistencia en localStorage
 - Tema emerald primary en ambos modos
 
-### ⌚ Samsung Health / Health Connect
-- Conecta tu reloj Samsung o Galaxy Watch
+### ⌚ Samsung Health / Google Fit / Health Connect
+- Conecta tu reloj Samsung, Galaxy Watch o Google Fit
 - Lee automáticamente:
   - Pasos diarios
   - Calorías activas y en reposo
@@ -86,6 +89,40 @@ CoachFit AI es una app de coaching personal inteligente que:
   - Ejercicios detectados (se registran en ExerciseLog automáticamente)
 - En PWA: entrada manual disponible
 - En APK: usa Health Connect (Android 14+) o @capacitor-community/health
+
+### ❤️ Ritmo cardíaco en tiempo real
+- Monitoreo continuo (cada 5 segundos)
+- Botón "Medir ahora" para medición on-demand
+- Stats: actual, promedio, máximo, mínimo
+- Historial de las últimas 2 horas
+- Visualización con animación de pulso
+
+### 📍 GPS para rutas de carrera
+- 4 actividades: Correr 🏃, Ciclismo 🚴, Caminar 🚶, Senderismo 🥾
+- Grabación con watchPosition API
+- Cálculo automático:
+  - Distancia (fórmula haversine)
+  - Calorías quemadas (MET × peso × tiempo)
+  - Ritmo promedio (min/km)
+  - Duración
+- Mini-mapa SVG con la ruta en tiempo real
+- Controles: Pausar / Continuar / Finalizar
+- Auto-registra como ExerciseLog al finalizar
+- Guarda ruta GPS completa para revisar después
+
+### 🤖 IA adaptativa
+- Si no cumples tu plan, la IA ajusta SOLO el ejercicio
+- NUNCA cambia la dieta (respeta presupuesto y preferencias)
+- Analiza adherencia de 7 días:
+  - Días perdidos
+  - Calorías objetivo vs reales
+  - Último feedback
+- Estrategias:
+  - Si déficit > 500 kcal → aumenta intensidad y cardio
+  - Si días perdidos > 3 → simplifica rutina (15-20 min)
+  - Si días perdidos ≤ 2 → ajuste leve
+- Fallback automático si IA falla
+- Botón "Ajustar plan con IA" en Perfil
 
 ### 📅 Horarios múltiples por día
 - Define bloques de horario diferentes para diferentes días:
