@@ -13,8 +13,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Cuentas de usuario (autenticación con email/password)
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String   // bcrypt hash
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relación 1:1 con UserProfile
+  profile      UserProfile?
+}
+
 model UserProfile {
   id              String   @id @default(cuid())
+  userId          String   @unique
   name            String
   age             Int
   gender          String   // "male" | "female" | "other"
@@ -54,7 +69,8 @@ model UserProfile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  // Relación 1:N con horarios
+  // Relaciones
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   schedules       WorkSchedule[]
 }
 

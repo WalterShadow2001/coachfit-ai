@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const date = searchParams.get('date')
     let logs = []
@@ -24,6 +28,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json()
     const log = await db.exerciseLog.create({
       data: {
@@ -34,7 +41,7 @@ export async function POST(req: NextRequest) {
         caloriesBurn: body.caloriesBurn ? Number(body.caloriesBurn) : null,
         notes: body.notes || null,
         onPlan: body.onPlan === undefined ? null : Boolean(body.onPlan),
-        source: body.source === 'voice' ? 'voice' : 'manual',
+        source: body.source === 'voice' ? 'voice' : (body.source === 'samsung_health' ? 'samsung_health' : (body.source === 'gps' ? 'gps' : 'manual')),
         syncStatus: 'pending',
       },
     })
@@ -46,6 +53,9 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })

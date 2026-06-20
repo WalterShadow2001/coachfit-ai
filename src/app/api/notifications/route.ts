@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
-// Obtiene notificaciones pendientes
 export async function GET() {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const now = new Date()
-    const settings = await db.settings.findUnique({ where: { id: 'default' } })
+    const profile = await db.userProfile.findFirst({ where: { userId } })
+    if (!profile) return NextResponse.json({ notifications: [], enabled: false, needsOnboarding: true })
+
+    const settings = await db.settings.findUnique({ where: { id: `default-${userId}` } })
     const notificationsEnabled = settings?.notificationsEnabled ?? true
 
     if (!notificationsEnabled) {
       return NextResponse.json({ notifications: [], enabled: false })
     }
 
-    // Pendientes cuya hora ya llegó (y snoozeUntil venció si aplica)
     const pending = await db.notification.findMany({
       where: {
         status: 'pending',
@@ -24,10 +29,7 @@ export async function GET() {
     })
 
     const snoozed = await db.notification.findMany({
-      where: {
-        status: 'snoozed',
-        snoozeUntil: { lte: now },
-      },
+      where: { status: 'snoozed', snoozeUntil: { lte: now } },
       orderBy: { snoozeUntil: 'asc' },
       take: 10,
     })
@@ -42,22 +44,21 @@ export async function GET() {
   }
 }
 
-// Responder a una notificación
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json()
-    const { id, action } = body // action: 'acknowledge' | 'snooze'
-    const settings = await db.settings.findUnique({ where: { id: 'default' } })
+    const { id, action } = body
+    const settings = await db.settings.findUnique({ where: { id: `default-${userId}` } })
     const snoozeMin = settings?.snoozeMinutes ?? 15
 
     const notif = await db.notification.findUnique({ where: { id } })
     if (!notif) return NextResponse.json({ error: 'No encontrada' }, { status: 404 })
 
     if (action === 'acknowledge') {
-      const updated = await db.notification.update({
-        where: { id },
-        data: { status: 'acknowledged' },
-      })
+      const updated = await db.notification.update({ where: { id }, data: { status: 'acknowledged' } })
       return NextResponse.json({ notification: updated })
     }
 
@@ -76,9 +77,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Crea una nueva notificación (programada por el frontend o por evento)
 export async function PUT(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json()
     const notif = await db.notification.create({
       data: {

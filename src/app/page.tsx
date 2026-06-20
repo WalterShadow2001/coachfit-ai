@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
+import AuthScreen from '@/components/AuthScreen'
 import Onboarding from '@/components/Onboarding'
 import Dashboard from '@/components/Dashboard'
 import PlanView from '@/components/PlanView'
@@ -11,46 +12,100 @@ import Profile from '@/components/Profile'
 import NotificationBanner from '@/components/NotificationBanner'
 import QuickLog from '@/components/QuickLog'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { Dumbbell, LayoutDashboard, Salad, Plus, Sparkles, User } from 'lucide-react'
+import { Dumbbell, LayoutDashboard, Salad, Plus, Sparkles, User, LogOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 export default function Home() {
   const { currentView, setView, hasProfile, setHasProfile } = useAppStore()
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [user, setUser] = useState<any>(null)
   const [checkingProfile, setCheckingProfile] = useState(true)
 
-  // Verificar si ya hay perfil
+  // 1. Verificar sesión
   useEffect(() => {
+    fetch('/api/auth/me')
+      .then(r => r.json())
+      .then(j => {
+        if (j.user) {
+          setUser(j.user)
+          // Si tiene profile, marcar como completado
+          if (j.user.profile) {
+            setHasProfile(true)
+            setView('dashboard')
+          } else {
+            setHasProfile(false)
+            setView('onboarding')
+          }
+        } else {
+          setUser(null)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCheckingAuth(false))
+  }, [])
+
+  // 2. Si hay sesión pero queremos verificar profile de nuevo
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
     fetch('/api/onboarding')
       .then(r => r.json())
       .then(j => {
+        if (cancelled) return
         if (j.profile) {
           setHasProfile(true)
-          setView('dashboard')
+          if (currentView === 'onboarding') setView('dashboard')
         } else {
-          // Si no hay perfil en backend, asegurar que el store refleje eso
           setHasProfile(false)
           setView('onboarding')
         }
       })
       .catch(() => {})
-      .finally(() => setCheckingProfile(false))
-  }, [])
+      .finally(() => {
+        if (!cancelled) setCheckingProfile(false)
+      })
+    return () => { cancelled = true }
+  }, [user])
 
-  if (checkingProfile) {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setHasProfile(false)
+      setView('onboarding')
+      toast.success('Sesión cerrada')
+    } catch {
+      toast.error('Error al cerrar sesión')
+    }
+  }
+
+  // Pantalla de carga
+  if (checkingAuth || checkingProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-emerald-600">
+        <div className="animate-pulse text-primary">
           <Dumbbell className="w-10 h-10 mx-auto mb-2" />
-          <p className="text-sm">Cargando...</p>
+          <p className="text-sm">Cargando CoachFit AI...</p>
         </div>
       </div>
     )
   }
 
-  // Si no hay perfil, mostrar onboarding
+  // No hay sesión → mostrar login/registro
+  if (!user) {
+    return <AuthScreen onAuth={() => {
+      // Recargar para obtener la sesión
+      window.location.reload()
+    }} />
+  }
+
+  // Hay sesión pero no hay profile → onboarding
   if (!hasProfile) {
     return <Onboarding onDone={() => setHasProfile(true)} />
   }
 
+  // Hay sesión y profile → app principal
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/30 to-white dark:from-slate-950 dark:to-slate-900">
       {/* Header */}
@@ -62,10 +117,23 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-bold text-sm leading-tight">CoachFit AI</h1>
-              <p className="text-xs text-muted-foreground leading-tight">Tu coach personal</p>
+              <p className="text-xs text-muted-foreground leading-tight">
+                Hola, {user.name || user.username}
+              </p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-9 h-9"
+              onClick={handleLogout}
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -102,11 +170,11 @@ function NavButton({ active, onClick, icon, label, highlight }: { active: boolea
     <button
       onClick={onClick}
       className={`flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-lg transition-colors ${
-        active ? 'text-emerald-600' : 'text-muted-foreground hover:text-foreground'
+        active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
       } ${highlight ? 'relative' : ''}`}
     >
       {highlight && (
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-3 mb-0.5 ${active ? 'bg-emerald-600 text-white' : 'bg-emerald-600 text-white'}`}>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-3 mb-0.5 ${active ? 'bg-primary text-primary-foreground' : 'bg-primary text-primary-foreground'}`}>
           {icon}
         </div>
       )}

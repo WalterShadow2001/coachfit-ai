@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) {
+      return NextResponse.json({ profile: null, settings: null, needsAuth: true }, { status: 200 })
+    }
+
     const profile = await db.userProfile.findFirst({
+      where: { userId },
       include: { schedules: true },
     })
-    const settings = await db.settings.findUnique({ where: { id: 'default' } })
+    const settings = await db.settings.findFirst({
+      where: { id: `default-${userId}` },
+    })
     return NextResponse.json({ profile, settings })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
@@ -15,6 +24,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) {
+      return NextResponse.json({ error: 'Debes iniciar sesión primero' }, { status: 401 })
+    }
+
     const body = await req.json()
 
     // Validación mínima
@@ -32,8 +46,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Si ya existe, actualizar; si no, crear
-    const existing = await db.userProfile.findFirst()
+    const existing = await db.userProfile.findFirst({ where: { userId } })
     const data: any = {
+      userId,
       name: String(body.name),
       age: Number(body.age),
       gender: String(body.gender),
@@ -100,11 +115,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Asegurar settings por defecto
+    // Asegurar settings por defecto para este usuario
     await db.settings.upsert({
-      where: { id: 'default' },
+      where: { id: `default-${userId}` },
       update: {},
-      create: { id: 'default' },
+      create: { id: `default-${userId}` },
     })
 
     // Devolver con horarios

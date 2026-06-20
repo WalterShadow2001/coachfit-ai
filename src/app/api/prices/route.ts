@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 import ZAI from 'z-ai-web-dev-sdk'
 import fs from 'fs'
 import path from 'path'
@@ -62,11 +63,14 @@ function safeParse(text: string): any | null {
  */
 export async function GET(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const refresh = searchParams.get('refresh') === 'true'
     const category = searchParams.get('category')
 
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({ where: { userId } })
     if (!profile) {
       return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
     }
@@ -146,8 +150,11 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json()
-    const profile = await db.userProfile.findFirst()
+    const profile = await db.userProfile.findFirst({ where: { userId } })
     if (!profile || !profile.city) {
       return NextResponse.json({ error: 'Sin ubicación' }, { status: 400 })
     }

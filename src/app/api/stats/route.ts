@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const profile = await db.userProfile.findFirst()
-    const settings = await db.settings.findUnique({ where: { id: 'default' } })
+    const userId = await getSessionUserId()
+    if (!userId) {
+      return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+    }
+
+    const profile = await db.userProfile.findFirst({ where: { userId } })
+    const settings = await db.settings.findUnique({ where: { id: `default-${userId}` } })
+
+    if (!profile) {
+      return NextResponse.json({ profile: null, needsOnboarding: true })
+    }
 
     // Estadísticas de los últimos 7 días
     const now = new Date()

@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 import { generateWeeklyMealPlan, generateWeeklyExercisePlan, type AIProfileSnapshot, type ScheduleBlock, type LocalPriceInfo } from '@/lib/ai'
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) {
+      return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+    }
+
     const profile = await db.userProfile.findFirst({
+      where: { userId },
       include: { schedules: true },
     })
     if (!profile) {
@@ -142,8 +149,19 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const mealPlan = await db.mealPlan.findFirst({ orderBy: { createdAt: 'desc' } })
-    const exercisePlan = await db.exercisePlan.findFirst({ orderBy: { createdAt: 'desc' } })
+    const userId = await getSessionUserId()
+    if (!userId) {
+      return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+    }
+
+    const profile = await db.userProfile.findFirst({ where: { userId } })
+    const mealPlan = profile ? await db.mealPlan.findFirst({
+      where: { generatedFor: { contains: userId } },
+      orderBy: { createdAt: 'desc' },
+    }) : null
+    const exercisePlan = profile ? await db.exercisePlan.findFirst({
+      orderBy: { createdAt: 'desc' },
+    }) : null
     return NextResponse.json({
       mealPlan: mealPlan ? { ...mealPlan, parsed: JSON.parse(mealPlan.content) } : null,
       exercisePlan: exercisePlan ? { ...exercisePlan, parsed: JSON.parse(exercisePlan.content) } : null,

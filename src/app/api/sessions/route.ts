@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
 /**
  * GET /api/sessions
- * Devuelve sesiones de ejercicio (con ruta GPS)
- * ?status=active → solo sesiones activas
- * ?id=xxx → sesión específica
- * ?limit=N → últimas N sesiones (default 50)
  */
 export async function GET(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     const status = searchParams.get('status')
@@ -54,6 +54,9 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json()
 
     // Si trae ID, actualizar sesión existente (ej: añadir puntos GPS)
@@ -114,6 +117,9 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })

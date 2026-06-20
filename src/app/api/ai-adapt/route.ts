@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 import { adaptExercisePlan, type AIProfileSnapshot, type ScheduleBlock } from '@/lib/ai'
 
 /**
@@ -9,7 +10,11 @@ import { adaptExercisePlan, type AIProfileSnapshot, type ScheduleBlock } from '@
  */
 export async function POST() {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const profile = await db.userProfile.findFirst({
+      where: { userId },
       include: { schedules: true },
     })
     if (!profile) {

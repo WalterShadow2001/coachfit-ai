@@ -10,6 +10,10 @@ interface AppState {
   hasProfile: boolean
   setHasProfile: (v: boolean) => void
 
+  // Sesión
+  user: any | null
+  setUser: (u: any | null) => void
+
   // Notificaciones
   activeNotification: any | null
   setActiveNotification: (n: any | null) => void
@@ -34,6 +38,9 @@ export const useAppStore = create<AppState>()(
       hasProfile: false,
       setHasProfile: (v) => set({ hasProfile: v }),
 
+      user: null,
+      setUser: (u) => set({ user: u }),
+
       activeNotification: null,
       setActiveNotification: (n) => set({ activeNotification: n }),
 
@@ -47,14 +54,13 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'coachfit-storage',
-      // Migrar estado viejo: si currentView era 'settings', cambiarlo a 'profile'
       migrate: (persistedState: any, version: number) => {
         if (persistedState?.currentView === 'settings') {
           persistedState.currentView = 'profile'
         }
         return persistedState
       },
-      version: 1,
+      version: 2,
     }
   )
 )

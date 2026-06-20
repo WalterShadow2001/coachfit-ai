@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
-// Programa las notificaciones del día según el perfil del usuario y su plan
-// Respeta los horarios específicos por día (WorkSchedule)
 export async function POST() {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const profile = await db.userProfile.findFirst({
+      where: { userId },
       include: { schedules: true },
     })
     if (!profile) return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
 
-    const settings = await db.settings.findUnique({ where: { id: 'default' } })
+    const settings = await db.settings.findUnique({ where: { id: `default-${userId}` } })
     if (!settings?.notificationsEnabled) {
       return NextResponse.json({ scheduled: 0, message: 'Notificaciones deshabilitadas' })
     }
@@ -18,9 +21,6 @@ export async function POST() {
     const today = new Date()
     const todayStr = today.toISOString().slice(0, 10)
     const dayName = today.toLocaleDateString('es-MX', { weekday: 'long' }).toLowerCase()
-
-    // Buscar el horario que aplica hoy
-    // Día de la semana en formato corto (mon, tue, wed, thu, fri, sat, sun)
     const dayShort = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][today.getDay()]
 
     const todaySchedule = profile.schedules.find(s => {
@@ -28,12 +28,6 @@ export async function POST() {
       return days.some(d => d.toLowerCase().startsWith(dayShort))
     })
 
-    if (!todaySchedule) {
-      // Si no hay horario para hoy, solo programar comidas básicas (desayuno/cena)
-      console.log('No schedule found for', dayName, '- scheduling minimal notifications')
-    }
-
-    // Limpiar notificaciones pendientes de hoy que aún no se han disparado
     const startToday = new Date(todayStr + 'T00:00:00')
     const endToday = new Date(todayStr + 'T23:59:59')
     await db.notification.deleteMany({
@@ -46,7 +40,6 @@ export async function POST() {
 
     const toSchedule: Array<{ type: string; title: string; body: string; scheduledFor: Date; payload?: any }> = []
 
-    // Plan de comidas del día
     const mealPlan = await db.mealPlan.findFirst({ orderBy: { createdAt: 'desc' } })
     let todaysMeals: any = null
     if (mealPlan) {
@@ -54,7 +47,6 @@ export async function POST() {
       todaysMeals = (parsed.days || []).find((d: any) => d.day?.toLowerCase() === dayName)
     }
 
-    // Plan de ejercicio del día
     const exercisePlan = await db.exercisePlan.findFirst({ orderBy: { createdAt: 'desc' } })
     let todaysExercise: any = null
     if (exercisePlan) {
@@ -62,62 +54,49 @@ export async function POST() {
       todaysExercise = (parsed.days || []).find((d: any) => d.day?.toLowerCase() === dayName)
     }
 
-    // === DESAYUNO === (15 min después de despertar, siempre)
     const breakfastTime = parseTime(todayStr, profile.wakeTime)
     breakfastTime.setMinutes(breakfastTime.getMinutes() + 15)
     if (breakfastTime > today) {
       toSchedule.push({
         type: 'meal',
         title: 'Hora del desayuno',
-        body: todaysMeals?.breakfast?.name
-          ? `Plan: ${todaysMeals.breakfast.name}`
-          : '¿Qué vas a desayunar? Registra tu comida.',
+        body: todaysMeals?.breakfast?.name ? `Plan: ${todaysMeals.breakfast.name}` : '¿Qué vas a desayunar?',
         scheduledFor: breakfastTime,
         payload: { mealType: 'breakfast', planned: todaysMeals?.breakfast },
       })
     }
 
-    // === LUNCH === (solo si hay horario de lunch hoy)
     if (todaySchedule) {
       const lunchTime = parseTime(todayStr, todaySchedule.lunchStart)
       if (lunchTime > today) {
-        const msg = todaySchedule.isFreeDay
-          ? (todaysMeals?.lunch?.name || 'Es tu día libre. Disfruta tu comida.')
-          : `Plan: ${todaysMeals?.lunch?.name || 'Es tu hora de comida'}. ${todaySchedule.label}.`
         toSchedule.push({
           type: 'meal',
           title: todaySchedule.isFreeDay ? 'Hora de comer (día libre)' : `Hora de comer - ${todaySchedule.label}`,
-          body: msg,
+          body: todaysMeals?.lunch?.name ? `Plan: ${todaysMeals.lunch.name}` : 'Es tu hora de comida',
           scheduledFor: lunchTime,
           payload: { mealType: 'lunch', planned: todaysMeals?.lunch, scheduleLabel: todaySchedule.label },
         })
       }
     }
 
-    // === CENA === (2-3 horas antes de dormir)
     const dinnerTime = parseTime(todayStr, profile.sleepTime)
     dinnerTime.setHours(dinnerTime.getHours() - 3)
     if (dinnerTime > today) {
       toSchedule.push({
         type: 'meal',
         title: 'Hora de cenar',
-        body: todaysMeals?.dinner?.name
-          ? `Plan: ${todaysMeals.dinner.name}`
-          : '¿Qué vas a cenar? Recuerda registrar.',
+        body: todaysMeals?.dinner?.name ? `Plan: ${todaysMeals.dinner.name}` : '¿Qué vas a cenar?',
         scheduledFor: dinnerTime,
         payload: { mealType: 'dinner', planned: todaysMeals?.dinner },
       })
     }
 
-    // === EJERCICIO === (si hay plan hoy)
     if (todaysExercise && todaysExercise.exercises?.length > 0) {
       let exerciseTime: Date
       if (todaySchedule && !todaySchedule.isFreeDay) {
-        // Día laboral: ejercicio 30 min después del trabajo
         exerciseTime = parseTime(todayStr, todaySchedule.workEnd)
         exerciseTime.setMinutes(exerciseTime.getMinutes() + 30)
       } else {
-        // Día libre o sin horario: 1 hora después de despertar
         exerciseTime = parseTime(todayStr, profile.wakeTime)
         exerciseTime.setHours(exerciseTime.getHours() + 1)
       }
@@ -132,7 +111,6 @@ export async function POST() {
       }
     }
 
-    // === FEEDBACK al final del día ===
     const feedbackTime = parseTime(todayStr, profile.sleepTime)
     feedbackTime.setMinutes(feedbackTime.getMinutes() - 30)
     if (feedbackTime > today) {
@@ -144,7 +122,6 @@ export async function POST() {
       })
     }
 
-    // Insertar todas
     const created = await Promise.all(
       toSchedule.map(n =>
         db.notification.create({
@@ -159,18 +136,7 @@ export async function POST() {
       )
     )
 
-    return NextResponse.json({
-      scheduled: created.length,
-      items: created,
-      todaySchedule: todaySchedule ? {
-        label: todaySchedule.label,
-        isFreeDay: todaySchedule.isFreeDay,
-        workStart: todaySchedule.workStart,
-        workEnd: todaySchedule.workEnd,
-        lunchStart: todaySchedule.lunchStart,
-        lunchEnd: todaySchedule.lunchEnd,
-      } : null,
-    })
+    return NextResponse.json({ scheduled: created.length, items: created })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

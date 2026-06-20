@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 
 /**
  * GET /api/heart-rate
- * Devuelve el ritmo cardíaco más reciente y el historial reciente
  */
 export async function GET(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const minutes = Number(searchParams.get('minutes') || '10')
     const since = new Date(Date.now() - minutes * 60 * 1000)

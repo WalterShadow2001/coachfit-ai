@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUserId } from '@/lib/auth'
 import { generateDailyFeedback, type AIProfileSnapshot, type ScheduleBlock } from '@/lib/ai'
 
 export async function GET(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const date = searchParams.get('date') || new Date().toISOString().slice(0, 10)
     const feedback = await db.feedback.findFirst({
@@ -19,23 +23,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId()
+    if (!userId) return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
+
     const body = await req.json().catch(() => ({}))
     const date = body.date || new Date().toISOString().slice(0, 10)
 
     const profile = await db.userProfile.findFirst({
+      where: { userId },
       include: { schedules: true },
     })
-    if (!profile) {
-      return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
-    }
+    if (!profile) return NextResponse.json({ error: 'Sin perfil' }, { status: 400 })
 
-    // Recopilar logs del día
     const start = new Date(date + 'T00:00:00')
     const end = new Date(date + 'T23:59:59')
     const mealLogs = await db.mealLog.findMany({ where: { loggedAt: { gte: start, lte: end } } })
     const exerciseLogs = await db.exerciseLog.findMany({ where: { loggedAt: { gte: start, lte: end } } })
 
-    // Plan del día (si existe)
     const mealPlan = await db.mealPlan.findFirst({ orderBy: { createdAt: 'desc' } })
     const exercisePlan = await db.exercisePlan.findFirst({ orderBy: { createdAt: 'desc' } })
 
@@ -52,12 +56,9 @@ export async function POST(req: NextRequest) {
       plannedExercise = (parsed.days || []).filter((d: any) => d.day?.toLowerCase() === dayName)
     }
 
-    // Feedback anterior (ayer)
     const yesterday = new Date(date + 'T00:00:00')
     yesterday.setDate(yesterday.getDate() - 1)
-    const previous = await db.feedback.findFirst({
-      where: { date: yesterday },
-    })
+    const previous = await db.feedback.findFirst({ where: { date: yesterday } })
 
     const schedules: ScheduleBlock[] = profile.schedules.map(s => ({
       label: s.label,
@@ -99,7 +100,6 @@ export async function POST(req: NextRequest) {
       previousFeedback: previous?.content,
     })
 
-    // Guardar
     await db.feedback.deleteMany({ where: { date: new Date(date + 'T00:00:00') } })
     const saved = await db.feedback.create({
       data: {
