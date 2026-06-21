@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
 import { useAppStore } from '@/lib/store'
-import { Loader2, ChevronLeft, ChevronRight, Dumbbell, Salad, Wallet, Clock, Heart, Plus, Trash2, Calendar } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Dumbbell, Salad, Wallet, Clock, Heart, Plus, Trash2, Calendar, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 
 const DAYS = [
@@ -59,6 +59,18 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState('')
   const setHasProfile = useAppStore(s => s.setHasProfile)
   const setView = useAppStore(s => s.setView)
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      // Limpiar estado local
+      localStorage.clear()
+      // Recargar la página para que vuelva al login
+      window.location.href = '/'
+    } catch {
+      toast.error('Error al cerrar sesión')
+    }
+  }
 
   const [data, setData] = useState<any>({
     name: '',
@@ -207,9 +219,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950 dark:to-slate-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <div className="flex items-center gap-2 mb-2">
-            <Dumbbell className="w-6 h-6 text-primary" />
-            <span className="font-bold text-lg">CoachFit AI</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Dumbbell className="w-6 h-6 text-primary" />
+              <span className="font-bold text-lg">CoachFit AI</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-xs text-muted-foreground">
+              <LogOut className="w-3 h-3 mr-1" /> Cerrar sesión
+            </Button>
           </div>
           <Progress value={(step / 5) * 100} className="h-2 mb-2" />
           <CardTitle className="text-2xl">
