@@ -18,18 +18,18 @@ import { toast } from 'sonner'
 
 export default function Home() {
   const { currentView, setView, hasProfile, setHasProfile } = useAppStore()
-  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
-  const [checkingProfile, setCheckingProfile] = useState(true)
 
-  // 1. Verificar sesión
+  // Un solo useEffect que verifica sesión + perfil
   useEffect(() => {
+    let cancelled = false
     fetch('/api/auth/me')
       .then(r => r.json())
       .then(j => {
+        if (cancelled) return
         if (j.user) {
           setUser(j.user)
-          // Si tiene profile, marcar como completado
           if (j.user.profile) {
             setHasProfile(true)
             setView('dashboard')
@@ -39,34 +39,19 @@ export default function Home() {
           }
         } else {
           setUser(null)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setCheckingAuth(false))
-  }, [])
-
-  // 2. Si hay sesión pero queremos verificar profile de nuevo
-  useEffect(() => {
-    if (!user) return
-    let cancelled = false
-    fetch('/api/onboarding')
-      .then(r => r.json())
-      .then(j => {
-        if (cancelled) return
-        if (j.profile) {
-          setHasProfile(true)
-          if (currentView === 'onboarding') setView('dashboard')
-        } else {
           setHasProfile(false)
-          setView('onboarding')
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) {
+          setUser(null)
+        }
+      })
       .finally(() => {
-        if (!cancelled) setCheckingProfile(false)
+        if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [user])
+  }, [])
 
   const handleLogout = async () => {
     try {
@@ -80,8 +65,13 @@ export default function Home() {
     }
   }
 
+  const handleAuthSuccess = () => {
+    // Recargar para obtener la sesión
+    window.location.reload()
+  }
+
   // Pantalla de carga
-  if (checkingAuth || checkingProfile) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-primary">
@@ -94,10 +84,7 @@ export default function Home() {
 
   // No hay sesión → mostrar login/registro
   if (!user) {
-    return <AuthScreen onAuth={() => {
-      // Recargar para obtener la sesión
-      window.location.reload()
-    }} />
+    return <AuthScreen onAuth={handleAuthSuccess} />
   }
 
   // Hay sesión pero no hay profile → onboarding
@@ -108,7 +95,6 @@ export default function Home() {
   // Hay sesión y profile → app principal
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/30 to-white dark:from-slate-950 dark:to-slate-900">
-      {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-background/80 border-b">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -124,20 +110,13 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-9 h-9"
-              onClick={handleLogout}
-              title="Cerrar sesión"
-            >
+            <Button variant="ghost" size="icon" className="w-9 h-9" onClick={handleLogout} title="Cerrar sesión">
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Main content */}
       <main className="pb-20">
         {currentView === 'dashboard' && <Dashboard />}
         {currentView === 'plan' && <PlanView />}
@@ -146,12 +125,9 @@ export default function Home() {
         {currentView === 'profile' && <Profile />}
       </main>
 
-      {/* Notificación activa */}
       <NotificationBanner />
-      {/* Quick log modal */}
       <QuickLog />
 
-      {/* Bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-md border-t">
         <div className="max-w-3xl mx-auto grid grid-cols-5 gap-1 p-2 pb-[env(safe-area-inset-bottom)]">
           <NavButton active={currentView === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard className="w-5 h-5" />} label="Inicio" />
