@@ -156,14 +156,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Debes iniciar sesión' }, { status: 401 })
     }
 
-    const profile = await db.userProfile.findFirst({ where: { userId } })
-    const mealPlan = profile ? await db.mealPlan.findFirst({
-      where: { generatedFor: { contains: userId } },
-      orderBy: { createdAt: 'desc' },
-    }) : null
-    const exercisePlan = profile ? await db.exercisePlan.findFirst({
-      orderBy: { createdAt: 'desc' },
-    }) : null
+    // Devolver el plan más reciente sin filtrar por generatedFor
+    const mealPlan = await db.mealPlan.findFirst({ orderBy: { createdAt: 'desc' } })
+    const exercisePlan = await db.exercisePlan.findFirst({ orderBy: { createdAt: 'desc' } })
     return NextResponse.json({
       mealPlan: mealPlan ? { ...mealPlan, parsed: JSON.parse(mealPlan.content) } : null,
       exercisePlan: exercisePlan ? { ...exercisePlan, parsed: JSON.parse(exercisePlan.content) } : null,

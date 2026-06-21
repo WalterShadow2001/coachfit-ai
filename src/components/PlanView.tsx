@@ -103,6 +103,18 @@ export default function PlanView() {
 
           {/* === COMIDAS === */}
           <TabsContent value="meal" className="space-y-3">
+            {meals.length === 0 ? (
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <Salad className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="mb-4 text-muted-foreground">No tienes plan de comidas generado aún</p>
+                  <Button onClick={() => generate('meal')} disabled={generating}>
+                    {generating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generando comidas con IA...</> : <><Sparkles className="w-4 h-4 mr-2" /> Generar plan de comidas</>}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+            <>
             <div className="flex gap-2 overflow-x-auto pb-2">
               {meals.map((d: any) => (
                 <Button
@@ -142,6 +154,8 @@ export default function PlanView() {
                   )}
                 </CardContent>
               </Card>
+            )}
+            </>
             )}
           </TabsContent>
 
