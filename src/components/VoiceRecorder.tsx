@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Mic, Square, Loader2, Check, X } from 'lucide-react'
+import { Mic, Square, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface VoiceRecorderProps {
@@ -12,13 +12,6 @@ interface VoiceRecorderProps {
   placeholder?: string
 }
 
-/**
- * Componente que graba audio del micrófono y lo transcribe con IA.
- * Estrategia:
- * 1. Intentar Web Speech API (gratis, en navegador, Chrome/Edge)
- * 2. Si no disponible, usar MediaRecorder + API /api/asr (Z.ai SDK)
- * 3. Si falla la API, mostrar error claro
- */
 export default function VoiceRecorder({
   onTranscribed,
   buttonText = 'Responder con voz',
@@ -37,6 +30,7 @@ export default function VoiceRecorder({
   const rafRef = useRef<number | null>(null)
   const recognitionRef = useRef<any>(null)
   const finalTranscriptRef = useRef<string>('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
@@ -48,7 +42,6 @@ export default function VoiceRecorder({
     }
   }, [])
 
-  // Verificar soporte de Web Speech API
   const hasWebSpeech = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
@@ -57,7 +50,6 @@ export default function VoiceRecorder({
     setError(null)
 
     try {
-      // 1. Intentar Web Speech API primero (gratis, rápido, en español)
       if (hasWebSpeech) {
         try {
           const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -66,38 +58,72 @@ export default function VoiceRecorder({
           recognition.continuous = true
           recognition.interimResults = true
 
+          let lastFinalText = ''
+
           recognition.onresult = (event: any) => {
             let interim = ''
-            let final = ''
+            let finalThisRound = ''
+
             for (let i = event.resultIndex; i < event.results.length; i++) {
               const transcript = event.results[i][0].transcript
               if (event.results[i].isFinal) {
-                final += transcript
+                finalThisRound += transcript
               } else {
                 interim += transcript
               }
             }
-            finalTranscriptRef.current = finalTranscriptRef.current + final
-            // Actualizar nivel de audio con la actividad
+
+            // Agregar el texto final de esta ronda con espacio apropiado
+            if (finalThisRound) {
+              // Limpiar espacios múltiples y agregar espacio entre segmentos
+              const cleanText = finalThisRound.trim()
+              if (cleanText) {
+                if (lastFinalText && !lastFinalText.endsWith(' ')) {
+                  finalTranscriptRef.current += ' '
+                }
+                finalTranscriptRef.current += cleanText
+                lastFinalText = cleanText
+              }
+            }
+
+            // Actualizar nivel de audio basado en actividad
             setAudioLevel(interim ? 70 : 30)
           }
 
           recognition.onerror = (event: any) => {
             console.error('Speech recognition error:', event.error)
             if (event.error === 'not-allowed') {
+              setError('Permiso de micrófono denegado')
               toast.error('Permiso de micrófono denegado')
+              setIsRecording(false)
             } else if (event.error === 'no-speech') {
-              // No detectó voz, continuar
+              // Continuar, no es error crítico
+            } else if (event.error === 'aborted') {
+              // Usuario detuvo, no es error
+            } else if (event.error === 'network') {
+              setError('Error de red en reconocimiento')
             } else {
-              toast.error('Error de reconocimiento: ' + event.error)
+              console.warn('Speech error:', event.error)
             }
           }
 
           recognition.onend = () => {
             // Si terminó y hay transcript, devolverlo
-            if (finalTranscriptRef.current.trim()) {
-              onTranscribed(finalTranscriptRef.current.trim())
-              toast.success('Transcrito ✓ (Web Speech API)')
+            const finalText = finalTranscriptRef.current.trim()
+            if (finalText) {
+              // Limpiar el texto: eliminar espacios múltiples, normalizar
+              const cleaned = finalText
+                .replace(/\s+/g, ' ')
+                .replace(/\s+,/g, ',')
+                .replace(/\s+\./g, '.')
+                .trim()
+
+              if (cleaned.length > 0) {
+                onTranscribed(cleaned)
+                toast.success('Transcrito: ' + (cleaned.length > 40 ? cleaned.slice(0, 40) + '...' : cleaned))
+              } else {
+                toast.error('No te escuché bien, intenta de nuevo')
+              }
             }
             setIsRecording(false)
             setAudioLevel(0)
@@ -114,7 +140,7 @@ export default function VoiceRecorder({
         }
       }
 
-      // 2. Fallback: MediaRecorder + API /api/asr
+      // Fallback: MediaRecorder + API /api/asr
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -126,7 +152,6 @@ export default function VoiceRecorder({
       streamRef.current = stream
       setMethod('mediaRecorder')
 
-      // Audio level meter
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
       const source = audioContext.createMediaStreamSource(stream)
       const analyser = audioContext.createAnalyser()
@@ -144,7 +169,6 @@ export default function VoiceRecorder({
       }
       updateLevel()
 
-      // MediaRecorder
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
@@ -181,13 +205,11 @@ export default function VoiceRecorder({
       rafRef.current = null
     }
 
-    // Web Speech API
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
       recognitionRef.current = null
     }
 
-    // MediaRecorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       if (!triggerTranscribe) {
         mediaRecorderRef.current.onstop = null
@@ -229,15 +251,14 @@ export default function VoiceRecorder({
       if (!res.ok) throw new Error(data.error || 'Error de transcripción')
       if (data.text && data.text.trim()) {
         onTranscribed(data.text.trim())
-        toast.success('Transcrito ✓ (IA Z.ai)')
+        toast.success('Transcrito ✓')
       } else {
         toast.error('No te escuché bien, intenta de nuevo')
       }
     } catch (e: any) {
       console.error('Transcribe error:', e)
-      // Mensaje más claro para el usuario
       if (e.message.includes('fetch')) {
-        toast.error('No se pudo conectar con el servicio de IA. Intenta de nuevo.')
+        toast.error('No se pudo conectar con el servicio de IA')
       } else {
         toast.error('Error: ' + e.message)
       }
@@ -245,8 +266,6 @@ export default function VoiceRecorder({
       setIsTranscribing(false)
     }
   }
-
-  const [error, setError] = useState<string | null>(null)
 
   if (isTranscribing) {
     return (
@@ -281,7 +300,7 @@ export default function VoiceRecorder({
         </div>
         {method === 'webspeech' && (
           <p className="text-xs text-emerald-600 dark:text-emerald-400 text-center">
-            🎤 Escuchando con Web Speech API (es-MX) - habla claro
+            🎤 Escuchando (es-MX) - habla claro y pausado
           </p>
         )}
       </div>
@@ -307,4 +326,3 @@ export default function VoiceRecorder({
     </div>
   )
 }
-
