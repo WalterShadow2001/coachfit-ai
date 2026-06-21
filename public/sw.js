@@ -1,27 +1,20 @@
 // Service Worker para CoachFit AI
-// Cache básico para offline-first
+// NO cachea nada - siempre va a la red
+// Esto evita problemas de versiones cacheadas
 
-const CACHE_NAME = 'coachfit-v1'
-const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/logo.svg',
-]
+const CACHE_NAME = 'coachfit-v2-' + Date.now()
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS).catch(() => {}))
-  )
+  // Skip waiting para activar inmediatamente
   self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
-      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
-    )
+      Promise.all(names.map(n => caches.delete(n)))
+    ).then(() => self.clients.claim())
   )
-  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
@@ -30,39 +23,19 @@ self.addEventListener('fetch', (event) => {
   // Solo GET
   if (request.method !== 'GET') return
 
-  // API calls: network first, fallback to cache
+  // API calls: siempre network (no cache)
   if (request.url.includes('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Clonar y guardar en cache
-          if (response.ok) {
-            const clone = response.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {})
-          }
-          return response
-        })
-        .catch(() => caches.match(request).then(cached => cached || new Response('Offline', { status: 503 })))
-    )
+    event.respondWith(fetch(request))
     return
   }
 
-  // Static assets: cache first
+  // Todo lo demás: network first, sin cache
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached
-      return fetch(request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {})
-        }
-        return response
-      }).catch(() => cached)
-    })
+    fetch(request).catch(() => caches.match(request).then(cached => cached || new Response('Offline', { status: 503 })))
   )
 })
 
-// Notificaciones push (futuras)
+// Notificaciones push
 self.addEventListener('push', (event) => {
   if (!event.data) return
   try {
@@ -78,7 +51,6 @@ self.addEventListener('push', (event) => {
   } catch {}
 })
 
-// Click en notificación
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   event.waitUntil(

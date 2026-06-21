@@ -44,7 +44,22 @@ export default function RootLayout({
         <meta httpEquiv="Expires" content="0" />
         <script
           dangerouslySetInnerHTML={{
-            __html: `try { const t = localStorage.getItem('theme'); if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) { document.documentElement.classList.add('dark'); } } catch (e) {}`,
+            __html: `
+              try {
+                const t = localStorage.getItem('theme');
+                if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                  document.documentElement.classList.add('dark');
+                }
+              } catch (e) {}
+              // Limpiar Service Workers viejos
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                  for(var registration of registrations) {
+                    registration.unregister();
+                  }
+                });
+              }
+            `,
           }}
         />
       </head>
@@ -58,11 +73,6 @@ export default function RootLayout({
           {children}
           <Toaster />
           <Sonner />
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); }); }`,
-            }}
-          />
         </ThemeProvider>
       </body>
     </html>
