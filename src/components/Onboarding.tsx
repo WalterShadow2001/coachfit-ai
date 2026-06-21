@@ -217,7 +217,17 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950 dark:to-slate-950 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
+      {/* Banner de logout - siempre visible arriba */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white px-4 py-2 flex items-center justify-between text-sm">
+        <span>¿No es tu cuenta? Puedes cerrar sesión</span>
+        <button
+          onClick={handleLogout}
+          className="bg-white text-amber-600 px-3 py-1 rounded font-bold text-xs hover:bg-amber-50"
+        >
+          CERRAR SESIÓN
+        </button>
+      </div>
+      <Card className="w-full max-w-lg mt-10">
         <CardHeader>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
