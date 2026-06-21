@@ -46,6 +46,9 @@ model UserProfile {
   dislikedFoods   String   // JSON
   equipment       String   // JSON: ["dumbbells","resistance_band","none"]
   goal            String   // "lose" | "maintain" | "gain"
+  // Condiciones médicas
+  medicalConditions String  @default("[]") // JSON: ["diabetes_type_1", "diabetes_type_2", "bariatric", "hypertension", "hypothyroidism", "pcos", "none"]
+  medicalNotes    String?  // Notas adicionales del usuario sobre su salud
   // Ubicación del usuario (para precios locales)
   city            String?  // "Monterrey", "CDMX", etc.
   state           String?  // "Nuevo León"

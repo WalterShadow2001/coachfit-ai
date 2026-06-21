@@ -5,11 +5,12 @@ import { hashPassword, createSession, setSessionCookie } from '@/lib/auth'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { email, username, password, name } = body as {
+    const { email, username, password, name, remember } = body as {
       email: string
       username: string
       password: string
       name?: string
+      remember?: boolean
     }
 
     // Validaciones
@@ -66,8 +67,9 @@ export async function POST(req: NextRequest) {
     })
 
     // Crear sesión
-    const token = await createSession(user.id)
-    await setSessionCookie(token)
+    const rememberMe = Boolean(remember)
+    const token = await createSession(user.id, rememberMe)
+    await setSessionCookie(token, rememberMe)
 
     return NextResponse.json({
       ok: true,

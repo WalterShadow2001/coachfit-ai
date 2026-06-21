@@ -77,6 +77,9 @@ export interface AIProfileSnapshot {
   dislikedFoods: string[]
   equipment: string[]
   goal: string
+  // Condiciones médicas
+  medicalConditions: string[]
+  medicalNotes?: string | null
   // Meta de tiempo (para ajustar calorías objetivo)
   targetWeeks?: number | null
   targetCalories?: number | null
@@ -200,6 +203,24 @@ ${profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `
 - Alergias: ${profile.allergies.join(', ') || 'ninguna'}
 - Foods que NO le gustan: ${profile.dislikedFoods.join(', ') || 'ninguno'}
 - Equipo de ejercicio disponible: ${profile.equipment.join(', ')}
+${profile.medicalConditions.length > 0 ? `
+CONDICIONES MÉDICAS IMPORTANTES:
+${profile.medicalConditions.map(c => {
+  const conditions: Record<string, string> = {
+    diabetes_type_1: 'Diabetes Tipo 1: requiere control de azúcar, carbohidratos de bajo índice glucémico, NUNCA omitir comidas, ajustar insulina',
+    diabetes_type_2: 'Diabetes Tipo 2: controlar azúcar, carbohidratos complejos, evitar azúcares simples, ejercicio regular moderado',
+    bariatric: 'Cirugía bariátrica: porciones pequeñas, proteína primero, evitar azúcares y grasas, vitaminas, comer lento, NO beber durante comidas',
+    hypertension: 'Hipertensión: baja en sodio (menos de 1500mg/día), evitar procesados, más potasio (plátano, espinaca), ejercicio aeróbico moderado',
+    hypothyroidism: 'Hipotiroidismo: metabolismo lento, suficiente yodo y selenio, evitar exceso de soya, ejercicio regular para activar metabolismo',
+    pcos: 'SOP (Síndrome de Ovario Poliquístico): baja en carbohidratos refinados, alta en proteína, omega-3, ejercicio de fuerza importante',
+    cholesterol: 'Colesterol alto: reducir grasas saturadas, más fibra soluble (avena, frijol), omega-3, evitar yema de huevo, ejercicio cardio',
+    gastritis: 'Gastritis: evitar irritantes (picante, café, alcohol, cítricos), comidas pequeñas frecuentes, antiinflamatorios naturales',
+    anemia: 'Anemia: hierro (carne roja, espinaca), vitamina C para absorción, evitar té/café con comidas, cocinar en olla de hierro',
+  }
+  return `  • ${conditions[c] || c}`
+}).join('\n')}
+${profile.medicalNotes ? `Notas del paciente: ${profile.medicalNotes}` : ''}
+ADVERTENCIA: Ajusta el plan ESPECÍFICAMENTE para estas condiciones. La seguridad del usuario depende de esto.` : ''}
 
 ESQUEMA JSON REQUERIDO (sigue EXACTAMENTE esta estructura):
 {
@@ -309,6 +330,22 @@ DATOS:
 ${profile.schedules.map(s => `  • ${s.label}: ${s.isFreeDay ? 'DÍA LIBRE' : `trabaja ${s.workStart}-${s.workEnd}`} (días: ${s.days.join(', ')})`).join('\n')}
 - Despierta: ${profile.wakeTime}, Duerme: ${profile.sleepTime}
 - Equipo disponible: ${profile.equipment.join(', ') || 'solo peso corporal'}
+${profile.medicalConditions.length > 0 ? `
+CONDICIONES MÉDICAS - AJUSTA EL EJERCICIO:
+${profile.medicalConditions.map(c => {
+  const ex: Record<string, string> = {
+    diabetes_type_1: 'Diabetes Tipo 1: ejercicio moderado, NUNCA en ayunas, monitorear glucosa, llevar carbohidratos de emergencia',
+    diabetes_type_2: 'Diabetes Tipo 2: cardio moderado 30 min, evitar ejercicio intenso en ayunas, monitorear glucosa',
+    bariatric: 'Bariatrica: NO ejercicios abdominales intensos los primeros 6 meses, caminata y movilidad, incrementar gradualmente',
+    hypertension: 'Hipertension: evitar ejercicios isometricos y de alta intensidad, cardio moderado, NO contener la respiracion',
+    hypothyroidism: 'Hipotiroidismo: metabolismo lento, ejercicio regular pero no extremo, combinar cardio y fuerza',
+    pcos: 'SOP: priorizar ejercicio de fuerza, cardio moderado, evitar sobreentrenamiento',
+    cholesterol: 'Colesterol alto: cardio aerobico 30-45 min, evitar pesas pesadas, combinacion cardio+fuerza',
+    gastritis: 'Gastritis: ejercicio suave, evitar abdominales intensos en crisis, yoga y caminata',
+    anemia: 'Anemia: ejercicio moderado, evitar alta intensidad, descansar entre series, hidratarse',
+  }
+  return `  • ${ex[c] || c}`
+}).join('\n')}` : ''}
 
 Devuelve ÚNICAMENTE este JSON (sin texto antes ni después):
 {"weekStart":"2026-06-20","days":[{"day":"lunes","focus":"Cardio + Core","exercises":[{"name":"Sentadillas","sets":3,"reps":"12-15","duration":"10 min","rest":"60s","notes":"Mantén la espalda recta"}],"totalMinutes":35,"caloriesBurn":250}],"notes":"Recomendaciones generales"}

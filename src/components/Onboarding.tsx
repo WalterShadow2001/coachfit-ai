@@ -28,6 +28,19 @@ const DAYS = [
 const DIETARY = ['Vegetariano', 'Vegano', 'Sin gluten', 'Sin lactosa', 'Bajo en carbohidratos', 'Cetogénico', 'Sin cerdo', 'Sin mariscos']
 const EQUIPMENT = ['Mancuernas', 'Bandas de resistencia', 'Barra de dominadas', 'Banco', 'Pelota de yoga', 'Sin equipo (peso corporal)']
 
+const MEDICAL_CONDITIONS = [
+  { id: 'diabetes_type_2', label: 'Diabetes Tipo 2', desc: 'Control de azúcar' },
+  { id: 'diabetes_type_1', label: 'Diabetes Tipo 1', desc: 'Insulina' },
+  { id: 'bariatric', label: 'Cirugía bariátrica', desc: 'Post-operatoria' },
+  { id: 'hypertension', label: 'Hipertensión', desc: 'Presión alta' },
+  { id: 'hypothyroidism', label: 'Hipotiroidismo', desc: 'Tiroides lenta' },
+  { id: 'pcos', label: 'SOP', desc: 'Ovario poliquístico' },
+  { id: 'cholesterol', label: 'Colesterol alto', desc: 'Dislipidemia' },
+  { id: 'gastritis', label: 'Gastritis', desc: 'Estómago sensible' },
+  { id: 'anemia', label: 'Anemia', desc: 'Falta de hierro' },
+  { id: 'none', label: 'Ninguna', desc: 'Sin condiciones' },
+]
+
 interface ScheduleBlock {
   id: string
   label: string
@@ -63,6 +76,8 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     dislikedFoods: [],
     equipment: ['Sin equipo (peso corporal)'],
     goal: 'lose',
+    medicalConditions: [],
+    medicalNotes: '',
     allergyInput: '',
     dislikeInput: '',
     // Horarios múltiples - por defecto L-V trabajo + sábado trabajo + domingo libre
@@ -298,6 +313,43 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 <Label htmlFor="budget" className="flex items-center gap-2"><Wallet className="w-4 h-4" /> Presupuesto semanal para comida (MXN)</Label>
                 <Input id="budget" type="number" value={data.budgetPerWeek} onChange={e => set('budgetPerWeek', e.target.value)} placeholder="1500" />
                 <p className="text-xs text-muted-foreground mt-1">Esto incluye todas tus comidas de la semana</p>
+              </div>
+
+              {/* Condiciones médicas */}
+              <div className="border-t pt-3">
+                <Label className="mb-2 block">¿Tienes alguna condición médica?</Label>
+                <p className="text-xs text-muted-foreground mb-2">La IA ajustará tu dieta y ejercicio según tus condiciones</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {MEDICAL_CONDITIONS.map(c => (
+                    <label key={c.id} className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                      data.medicalConditions.includes(c.id) ? 'border-primary bg-primary/10' : 'hover:bg-muted'
+                    }`}>
+                      <Checkbox
+                        checked={data.medicalConditions.includes(c.id)}
+                        onCheckedChange={() => {
+                          if (c.id === 'none') {
+                            set('medicalConditions', ['none'])
+                          } else {
+                            const filtered = data.medicalConditions.filter((x: string) => x !== 'none')
+                            set('medicalConditions', filtered.includes(c.id)
+                              ? filtered.filter((x: string) => x !== c.id)
+                              : [...filtered, c.id])
+                          }
+                        }}
+                      />
+                      <div>
+                        <div className="text-sm font-medium">{c.label}</div>
+                        <div className="text-xs text-muted-foreground">{c.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <Input
+                  className="mt-2"
+                  value={data.medicalNotes}
+                  onChange={e => set('medicalNotes', e.target.value)}
+                  placeholder="Notas adicionales sobre tu salud (opcional)"
+                />
               </div>
             </>
           )}

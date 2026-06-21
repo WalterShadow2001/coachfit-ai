@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Dumbbell, User, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -13,6 +14,7 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
   const [tab, setTab] = useState<'login' | 'register'>('login')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(false)
 
   // Login fields
   const [loginEmailOrUsername, setLoginEmailOrUsername] = useState('')
@@ -37,6 +39,7 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
         body: JSON.stringify({
           emailOrUsername: loginEmailOrUsername,
           password: loginPassword,
+          remember,
         }),
       })
       const data = await res.json()
@@ -69,6 +72,7 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
           username: regUsername,
           password: regPassword,
           name: regName || regUsername,
+          remember,
         }),
       })
       const data = await res.json()
@@ -140,6 +144,13 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
                   </button>
                 </div>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <Checkbox
+                  checked={remember}
+                  onCheckedChange={(v) => setRemember(v === true)}
+                />
+                <span className="text-muted-foreground">Mantener sesión abierta en este dispositivo</span>
+              </label>
               <Button onClick={handleLogin} disabled={loading} className="w-full">
                 {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 Entrar
@@ -167,7 +178,6 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
                     className="pl-9"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="tucorreo@ejemplo.com"
                   />
                 </div>
               </div>
@@ -205,6 +215,13 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
                   </button>
                 </div>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <Checkbox
+                  checked={remember}
+                  onCheckedChange={(v) => setRemember(v === true)}
+                />
+                <span className="text-muted-foreground">Mantener sesión abierta en este dispositivo</span>
+              </label>
               <Button onClick={handleRegister} disabled={loading} className="w-full">
                 {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 Crear cuenta
@@ -215,10 +232,12 @@ export default function AuthScreen({ onAuth }: { onAuth: () => void }) {
 
         <CardFooter className="justify-center">
           <p className="text-xs text-muted-foreground text-center">
-            Tus datos se guardan de forma segura en la nube (Turso)
+            Sin "mantener sesión": expira en 4 horas<br/>
+            Con "mantener sesión": 30 días sin volver a entrar
           </p>
         </CardFooter>
       </Card>
     </div>
   )
 }
+

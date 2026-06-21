@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
       dislikedFoods: JSON.parse(profile.dislikedFoods || '[]'),
       equipment: JSON.parse(profile.equipment || '[]'),
       goal: profile.goal,
+      medicalConditions: JSON.parse(profile.medicalConditions || '[]'),
+      medicalNotes: profile.medicalNotes,
       targetWeeks: profile.targetWeeks,
       targetCalories,
     }

@@ -75,6 +75,13 @@ export async function POST(req: NextRequest) {
     if (body.targetDate !== undefined && body.targetDate) {
       data.targetDate = new Date(body.targetDate)
     }
+    // Condiciones médicas
+    if (body.medicalConditions !== undefined) {
+      data.medicalConditions = JSON.stringify(body.medicalConditions || [])
+    }
+    if (body.medicalNotes !== undefined) {
+      data.medicalNotes = body.medicalNotes || null
+    }
 
     let profile
     if (existing) {

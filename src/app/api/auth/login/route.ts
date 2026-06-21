@@ -5,9 +5,10 @@ import { verifyPassword, createSession, setSessionCookie } from '@/lib/auth'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { emailOrUsername, password } = body as {
+    const { emailOrUsername, password, remember } = body as {
       emailOrUsername: string
       password: string
+      remember?: boolean
     }
 
     if (!emailOrUsername || !password) {
@@ -43,9 +44,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Crear sesión
-    const token = await createSession(user.id)
-    await setSessionCookie(token)
+    // Crear sesión con duración según "remember"
+    const rememberMe = Boolean(remember)
+    const token = await createSession(user.id, rememberMe)
+    await setSessionCookie(token, rememberMe)
 
     return NextResponse.json({
       ok: true,
