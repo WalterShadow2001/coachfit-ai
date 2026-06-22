@@ -16,131 +16,24 @@ export default function VoiceRecorder({
   onTranscribed,
   buttonText = 'Responder con voz',
   compact = false,
-  placeholder,
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [isTranscribing, setIsTranscribing] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
-  const [method, setMethod] = useState<'webspeech' | 'mediaRecorder' | null>(null)
+  const [recordingTime, setRecordingTime] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const rafRef = useRef<number | null>(null)
-  const recognitionRef = useRef<any>(null)
-  const finalTranscriptRef = useRef<string>('')
-  const [error, setError] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     return () => {
       stopRecording(false)
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop() } catch {}
-      }
+      if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [])
 
-  const hasWebSpeech = typeof window !== 'undefined' &&
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-
   const startRecording = async () => {
-    finalTranscriptRef.current = ''
-    setError(null)
-
     try {
-      if (hasWebSpeech) {
-        try {
-          const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-          const recognition = new SpeechRecognitionClass()
-          recognition.lang = 'es-MX'
-          recognition.continuous = true
-          recognition.interimResults = true
-
-          let lastFinalText = ''
-
-          recognition.onresult = (event: any) => {
-            let interim = ''
-            let finalThisRound = ''
-
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript
-              if (event.results[i].isFinal) {
-                finalThisRound += transcript
-              } else {
-                interim += transcript
-              }
-            }
-
-            // Agregar el texto final de esta ronda con espacio apropiado
-            if (finalThisRound) {
-              // Limpiar espacios múltiples y agregar espacio entre segmentos
-              const cleanText = finalThisRound.trim()
-              if (cleanText) {
-                if (lastFinalText && !lastFinalText.endsWith(' ')) {
-                  finalTranscriptRef.current += ' '
-                }
-                finalTranscriptRef.current += cleanText
-                lastFinalText = cleanText
-              }
-            }
-
-            // Actualizar nivel de audio basado en actividad
-            setAudioLevel(interim ? 70 : 30)
-          }
-
-          recognition.onerror = (event: any) => {
-            console.error('Speech recognition error:', event.error)
-            if (event.error === 'not-allowed') {
-              setError('Permiso de micrófono denegado')
-              toast.error('Permiso de micrófono denegado')
-              setIsRecording(false)
-            } else if (event.error === 'no-speech') {
-              // Continuar, no es error crítico
-            } else if (event.error === 'aborted') {
-              // Usuario detuvo, no es error
-            } else if (event.error === 'network') {
-              setError('Error de red en reconocimiento')
-            } else {
-              console.warn('Speech error:', event.error)
-            }
-          }
-
-          recognition.onend = () => {
-            // Si terminó y hay transcript, devolverlo
-            const finalText = finalTranscriptRef.current.trim()
-            if (finalText) {
-              // Limpiar el texto: eliminar espacios múltiples, normalizar
-              const cleaned = finalText
-                .replace(/\s+/g, ' ')
-                .replace(/\s+,/g, ',')
-                .replace(/\s+\./g, '.')
-                .trim()
-
-              if (cleaned.length > 0) {
-                onTranscribed(cleaned)
-                toast.success('Transcrito: ' + (cleaned.length > 40 ? cleaned.slice(0, 40) + '...' : cleaned))
-              } else {
-                toast.error('No te escuché bien, intenta de nuevo')
-              }
-            }
-            setIsRecording(false)
-            setAudioLevel(0)
-          }
-
-          recognition.start()
-          recognitionRef.current = recognition
-          setMethod('webspeech')
-          setIsRecording(true)
-          setAudioLevel(50)
-          return
-        } catch (e) {
-          console.warn('Web Speech API failed, falling back to MediaRecorder:', e)
-        }
-      }
-
-      // Fallback: MediaRecorder + API /api/asr
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -150,49 +43,48 @@ export default function VoiceRecorder({
         }
       })
       streamRef.current = stream
-      setMethod('mediaRecorder')
-
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const source = audioContext.createMediaStreamSource(stream)
-      const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 256
-      source.connect(analyser)
-      audioContextRef.current = audioContext
-      analyserRef.current = analyser
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount)
-      const updateLevel = () => {
-        analyser.getByteFrequencyData(dataArray)
-        const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length
-        setAudioLevel(Math.min(100, avg * 2))
-        rafRef.current = requestAnimationFrame(updateLevel)
-      }
-      updateLevel()
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
           ? 'audio/webm'
-          : ''
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : ''
 
       const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       chunksRef.current = []
+
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
       }
+
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
-        transcribe(blob)
+        // Solo transcribir si hay más de 0.5 segundos de audio
+        if (blob.size > 1000) {
+          transcribe(blob)
+        } else {
+          toast.error('Grabación muy corta. Mantén presionado y habla más.')
+        }
       }
+
       mr.start()
       mediaRecorderRef.current = mr
       setIsRecording(true)
+      setRecordingTime(0)
+
+      // Timer para mostrar duración
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1)
+      }, 1000)
+
     } catch (e: any) {
       console.error('Mic error:', e)
       if (e.name === 'NotAllowedError') {
-        toast.error('Necesito permiso para usar el micrófono')
+        toast.error('Necesito permiso para usar el micrófono. Actívalo en los ajustes del navegador.')
       } else if (e.name === 'NotFoundError') {
-        toast.error('No se encontró micrófono')
+        toast.error('No se encontró micrófono en este dispositivo')
       } else {
         toast.error('Error: ' + e.message)
       }
@@ -200,16 +92,10 @@ export default function VoiceRecorder({
   }
 
   const stopRecording = (triggerTranscribe = true) => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
     }
-
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop() } catch {}
-      recognitionRef.current = null
-    }
-
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       if (!triggerTranscribe) {
         mediaRecorderRef.current.onstop = null
@@ -222,17 +108,14 @@ export default function VoiceRecorder({
       streamRef.current.getTracks().forEach(t => t.stop())
       streamRef.current = null
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {})
-      audioContextRef.current = null
-    }
     setIsRecording(false)
-    setAudioLevel(0)
+    setRecordingTime(0)
   }
 
   const transcribe = async (blob: Blob) => {
     setIsTranscribing(true)
     try {
+      // Convertir a base64
       const arrayBuffer = await blob.arrayBuffer()
       const bytes = new Uint8Array(arrayBuffer)
       let binary = ''
@@ -251,14 +134,14 @@ export default function VoiceRecorder({
       if (!res.ok) throw new Error(data.error || 'Error de transcripción')
       if (data.text && data.text.trim()) {
         onTranscribed(data.text.trim())
-        toast.success('Transcrito ✓')
+        toast.success('Transcrito: "' + (data.text.length > 40 ? data.text.slice(0, 40) + '...' : data.text) + '"')
       } else {
-        toast.error('No te escuché bien, intenta de nuevo')
+        toast.error('No te escuché bien. Intenta hablar más cerca del micrófono.')
       }
     } catch (e: any) {
       console.error('Transcribe error:', e)
-      if (e.message.includes('fetch')) {
-        toast.error('No se pudo conectar con el servicio de IA')
+      if (e.message.includes('fetch') || e.message.includes('network')) {
+        toast.error('No se pudo conectar con el servicio de IA. Verifica tu conexión.')
       } else {
         toast.error('Error: ' + e.message)
       }
@@ -271,7 +154,7 @@ export default function VoiceRecorder({
     return (
       <Button disabled className={compact ? '' : 'w-full'}>
         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        Transcribiendo...
+        Transcribiendo con IA...
       </Button>
     )
   }
@@ -286,23 +169,18 @@ export default function VoiceRecorder({
             className="flex-1"
           >
             <Square className="w-4 h-4 mr-2 fill-current" />
-            Detener y transcribir
+            Detener ({recordingTime}s)
           </Button>
           <div className="flex items-center gap-1 px-3 py-2 bg-rose-50 dark:bg-rose-950 rounded-lg">
-            <div
-              className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"
-              style={{ transform: `scale(${1 + audioLevel / 100})` }}
-            />
+            <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
             <span className="text-xs text-rose-700 dark:text-rose-300 font-medium">
-              {Math.round(audioLevel)}%
+              {recordingTime}s
             </span>
           </div>
         </div>
-        {method === 'webspeech' && (
-          <p className="text-xs text-emerald-600 dark:text-emerald-400 text-center">
-            🎤 Escuchando (es-MX) - habla claro y pausado
-          </p>
-        )}
+        <p className="text-xs text-center text-muted-foreground">
+          🔴 Grabando... Toca "Detener" cuando termines de hablar
+        </p>
       </div>
     )
   }
@@ -318,11 +196,9 @@ export default function VoiceRecorder({
         <Mic className="w-4 h-4 mr-2" />
         {buttonText}
       </Button>
-      {!hasWebSpeech && (
-        <p className="text-xs text-muted-foreground text-center">
-          ℹ️ Tu navegador no soporta Web Speech API, usando IA Z.ai
-        </p>
-      )}
+      <p className="text-xs text-center text-muted-foreground">
+        Toca para empezar a grabar, habla, y toca "Detener" cuando termines
+      </p>
     </div>
   )
 }
