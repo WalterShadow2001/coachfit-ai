@@ -18,154 +18,191 @@ export default function VoiceRecorder({
   compact = false,
 }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
-  const [isTranscribing, setIsTranscribing] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
+  const [liveText, setLiveText] = useState('')
+  const recognitionRef = useRef<any>(null)
+  const finalTextRef = useRef<string>('')
+  const shouldStopRef = useRef<boolean>(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
-      stopRecording(false)
+      doStop()
       if (timerRef.current) clearInterval(timerRef.current)
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current)
     }
   }, [])
 
+  const hasWebSpeech = typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+
   const startRecording = async () => {
+    if (!hasWebSpeech) {
+      toast.error('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.')
+      return
+    }
+
+    finalTextRef.current = ''
+    shouldStopRef.current = false
+    setLiveText('')
+    setIsRecording(true)
+    setRecordingTime(0)
+
+    // Timer
+    timerRef.current = setInterval(() => {
+      setRecordingTime(prev => prev + 1)
+    }, 1000)
+
+    startRecognition()
+  }
+
+  const startRecognition = () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      const recognition = new SpeechRecognitionClass()
+      recognition.lang = 'es-MX'
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+
+      recognition.onresult = (event: any) => {
+        let interim = ''
+        let finalThisRound = ''
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalThisRound += transcript
+          } else {
+            interim += transcript
+          }
         }
-      })
-      streamRef.current = stream
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : ''
+        // Agregar texto final
+        if (finalThisRound) {
+          const clean = finalThisRound.trim()
+          if (clean) {
+            if (finalTextRef.current && !finalTextRef.current.endsWith(' ')) {
+              finalTextRef.current += ' '
+            }
+            finalTextRef.current += clean
+          }
+        }
 
-      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      chunksRef.current = []
-
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
+        // Mostrar texto en vivo
+        setLiveText(finalTextRef.current + (interim ? ' ' + interim : ''))
       }
 
-      mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
-        // Solo transcribir si hay más de 0.5 segundos de audio
-        if (blob.size > 1000) {
-          transcribe(blob)
+      recognition.onerror = (event: any) => {
+        console.warn('Speech error:', event.error)
+        if (event.error === 'not-allowed') {
+          toast.error('Permiso de micrófono denegado')
+          doStop()
+        } else if (event.error === 'no-speech') {
+          // Silencio detectado - se reiniciará automáticamente en onend
+        } else if (event.error === 'aborted') {
+          // Usuario detuvo
+        } else if (event.error === 'network') {
+          // Error de red - intentar de nuevo
+        }
+      }
+
+      recognition.onend = () => {
+        // Si el usuario no detuvo manualmente, reiniciar
+        if (!shouldStopRef.current) {
+          // Pequeña pausa antes de reiniciar
+          restartTimeoutRef.current = setTimeout(() => {
+            if (!shouldStopRef.current) {
+              try {
+                recognition.start()
+              } catch (e) {
+                // Si falla al reiniciar, intentar una vez más
+                setTimeout(() => {
+                  if (!shouldStopRef.current) {
+                    try { recognition.start() } catch {}
+                  }
+                }, 500)
+              }
+            }
+          }, 100)
         } else {
-          toast.error('Grabación muy corta. Mantén presionado y habla más.')
+          // El usuario detuvo - devolver texto
+          finishRecording()
         }
       }
 
-      mr.start()
-      mediaRecorderRef.current = mr
-      setIsRecording(true)
-      setRecordingTime(0)
-
-      // Timer para mostrar duración
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1)
-      }, 1000)
-
+      recognitionRef.current = recognition
+      recognition.start()
     } catch (e: any) {
-      console.error('Mic error:', e)
-      if (e.name === 'NotAllowedError') {
-        toast.error('Necesito permiso para usar el micrófono. Actívalo en los ajustes del navegador.')
-      } else if (e.name === 'NotFoundError') {
-        toast.error('No se encontró micrófono en este dispositivo')
-      } else {
-        toast.error('Error: ' + e.message)
-      }
+      console.error('Recognition start error:', e)
+      toast.error('Error al iniciar: ' + e.message)
+      doStop()
     }
   }
 
-  const stopRecording = (triggerTranscribe = true) => {
+  const finishRecording = () => {
+    const finalText = finalTextRef.current
+      .replace(/\s+/g, ' ')
+      .replace(/\s+,/g, ',')
+      .replace(/\s+\./g, '.')
+      .trim()
+
+    if (finalText && finalText.length > 0) {
+      onTranscribed(finalText)
+      toast.success('Transcrito: "' + (finalText.length > 50 ? finalText.slice(0, 50) + '...' : finalText) + '"')
+    } else {
+      toast.error('No te escuché. Intenta hablar más fuerte.')
+    }
+
+    setIsRecording(false)
+    setLiveText('')
+    setRecordingTime(0)
+  }
+
+  const doStop = () => {
+    shouldStopRef.current = true
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      if (!triggerTranscribe) {
-        mediaRecorderRef.current.onstop = null
-        mediaRecorderRef.current.stop()
-      } else {
-        mediaRecorderRef.current.stop()
-      }
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current)
+      restartTimeoutRef.current = null
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop())
-      streamRef.current = null
-    }
-    setIsRecording(false)
-    setRecordingTime(0)
-  }
-
-  const transcribe = async (blob: Blob) => {
-    setIsTranscribing(true)
-    try {
-      // Convertir a base64
-      const arrayBuffer = await blob.arrayBuffer()
-      const bytes = new Uint8Array(arrayBuffer)
-      let binary = ''
-      const chunkSize = 0x8000
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as any)
-      }
-      const base64 = btoa(binary)
-
-      const res = await fetch('/api/asr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64 }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error de transcripción')
-      if (data.text && data.text.trim()) {
-        onTranscribed(data.text.trim())
-        toast.success('Transcrito: "' + (data.text.length > 40 ? data.text.slice(0, 40) + '...' : data.text) + '"')
-      } else {
-        toast.error('No te escuché bien. Intenta hablar más cerca del micrófono.')
-      }
-    } catch (e: any) {
-      console.error('Transcribe error:', e)
-      if (e.message.includes('fetch') || e.message.includes('network')) {
-        toast.error('No se pudo conectar con el servicio de IA. Verifica tu conexión.')
-      } else {
-        toast.error('Error: ' + e.message)
-      }
-    } finally {
-      setIsTranscribing(false)
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop() } catch {}
+      recognitionRef.current = null
     }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
-  if (isTranscribing) {
-    return (
-      <Button disabled className={compact ? '' : 'w-full'}>
-        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        Transcribiendo con IA...
-      </Button>
-    )
+  const stopRecording = () => {
+    shouldStopRef.current = true
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop() } catch {}
+    }
+    // onend se encargará de llamar finishRecording
   }
 
   if (isRecording) {
     return (
       <div className="space-y-2">
+        {/* Texto en vivo */}
+        {liveText && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg text-sm text-emerald-800 dark:text-emerald-200 min-h-[40px] max-h-[120px] overflow-y-auto">
+            {liveText}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <Button
             variant="destructive"
-            onClick={() => stopRecording(true)}
+            onClick={stopRecording}
             className="flex-1"
           >
             <Square className="w-4 h-4 mr-2 fill-current" />
@@ -179,7 +216,7 @@ export default function VoiceRecorder({
           </div>
         </div>
         <p className="text-xs text-center text-muted-foreground">
-          🔴 Grabando... Toca "Detener" cuando termines de hablar
+          🔴 Grabando... Habla normal. Toca "Detener" cuando termines.
         </p>
       </div>
     )
@@ -191,13 +228,12 @@ export default function VoiceRecorder({
         variant="outline"
         onClick={startRecording}
         className={compact ? '' : 'w-full'}
-        disabled={isTranscribing}
       >
         <Mic className="w-4 h-4 mr-2" />
         {buttonText}
       </Button>
       <p className="text-xs text-center text-muted-foreground">
-        Toca para empezar a grabar, habla, y toca "Detener" cuando termines
+        Toca para empezar, habla, y toca "Detener" cuando termines
       </p>
     </div>
   )
