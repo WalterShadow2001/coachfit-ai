@@ -16,7 +16,7 @@ import {
   Bell, Clock, RefreshCw, Loader2, Save, Cloud, CloudOff, Mic, Moon, Sun,
   User, Wallet, Watch, Smartphone, Heart, Activity, MapPin, Calendar,
   Sparkles, Dumbbell, AlertTriangle, Target, TrendingDown, ShoppingBag,
-  CheckCircle2, Info
+  CheckCircle2, Info, X
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
@@ -54,6 +54,7 @@ export default function Profile() {
   // Location
   const [location, setLocation] = useState<any>(null)
   const [detectingLocation, setDetectingLocation] = useState(false)
+  const [selectedCity, setSelectedCity] = useState('')
   // Weight goal
   const [weightGoal, setWeightGoal] = useState<any>(null)
   const [editTargetWeeks, setEditTargetWeeks] = useState('')
@@ -219,35 +220,36 @@ export default function Profile() {
     }
   }
 
-  const detectLocation = async () => {
+  const saveLocation = async (city: string) => {
+    if (!city || city.trim().length < 2) {
+      toast.error('Selecciona o escribe tu ciudad')
+      return
+    }
     setDetectingLocation(true)
     try {
-      if (!navigator.geolocation) {
-        toast.error('GPS no disponible en este dispositivo')
-        return
-      }
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords
-          const res = await fetch('/api/location', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude, longitude }),
-          })
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.error)
-          toast.success(`Ubicación detectada: ${data.location.city}, ${data.location.state}`)
-          await load()
-        },
-        (err) => {
-          toast.error('Permiso de ubicación denegado: ' + err.message)
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
+      const res = await fetch('/api/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(`Ubicación guardada: ${data.location.city}, ${data.location.state}`)
+      await load()
     } catch (e: any) {
       toast.error(e.message)
     } finally {
       setDetectingLocation(false)
+    }
+  }
+
+  const clearLocation = async () => {
+    try {
+      await fetch('/api/location', { method: 'DELETE' })
+      toast.success('Ubicación borrada')
+      await load()
+    } catch (e: any) {
+      toast.error(e.message)
     }
   }
 
@@ -394,36 +396,78 @@ export default function Profile() {
                     <MapPin className="w-4 h-4 text-primary" />
                     {location.city}, {location.state}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {location.latitude?.toFixed(4)}, {location.longitude?.toFixed(4)}
-                  </div>
                 </div>
                 <Badge className="bg-emerald-600">
-                  <CheckCircle2 className="w-3 h-3 mr-1" /> Detectada
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Guardada
                 </Badge>
               </div>
             </div>
-          ) : (
-            <div className="text-center py-3">
-              <p className="text-sm text-muted-foreground mb-3">
-                Detecta tu ubicación para que la IA busque precios en Alsuper, Ahorrera, Soriana, etc. de tu ciudad
-              </p>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Button onClick={detectLocation} disabled={detectingLocation} className="flex-1">
-              {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MapPin className="w-4 h-4 mr-2" />}
-              {location?.locationDetected ? 'Cambiar ubicación' : 'Detectar mi ubicación'}
-            </Button>
-            {location?.locationDetected && (
-              <Button variant="outline" onClick={() => disconnectHealth('all')}>
-                <RefreshCw className="w-4 h-4" />
+          ) : null}
+
+          {/* Input de ciudad con datalist */}
+          <div>
+            <Label htmlFor="city-input">Tu ciudad</Label>
+            <div className="flex gap-2 mt-1">
+              <input
+                id="city-input"
+                type="text"
+                list="mexico-cities"
+                value={selectedCity}
+                onChange={e => setSelectedCity(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && selectedCity.trim()) {
+                    e.preventDefault()
+                    saveLocation(selectedCity)
+                    setSelectedCity('')
+                  }
+                }}
+                placeholder="Escribe o selecciona tu ciudad"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+              <datalist id="mexico-cities">
+                <option value="Monterrey, Nuevo León" />
+                <option value="Guadalajara, Jalisco" />
+                <option value="Ciudad de México" />
+                <option value="Puebla" />
+                <option value="Tijuana, Baja California" />
+                <option value="León, Guanajuato" />
+                <option value="Juárez, Chihuahua" />
+                <option value="Chihuahua" />
+                <option value="Saltillo, Coahuila" />
+                <option value="Torreón, Coahuila" />
+                <option value="Hermosillo, Sonora" />
+                <option value="Culiacán, Sinaloa" />
+                <option value="Mérida, Yucatán" />
+                <option value="Cancún, Quintana Roo" />
+                <option value="Aguascalientes" />
+                <option value="Querétaro" />
+                <option value="Morelia, Michoacán" />
+                <option value="Toluca, Estado de México" />
+                <option value="Veracruz" />
+                <option value="Acapulco, Guerrero" />
+                <option value="San Luis Potosí" />
+                <option value="Piedras Negras, Coahuila" />
+                <option value="Nuevo Laredo, Tamaulipas" />
+                <option value="Reynosa, Tamaulipas" />
+                <option value="Matamoros, Tamaulipas" />
+                <option value="Delicias, Chihuahua" />
+                <option value="Cuauhtémoc, Chihuahua" />
+                <option value="Parral, Chihuahua" />
+              </datalist>
+              <Button onClick={() => { saveLocation(selectedCity); setSelectedCity('') }} disabled={detectingLocation || !selectedCity.trim()}>
+                {detectingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               </Button>
-            )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Escribe tu ciudad o selecciónala de la lista. Se usa para buscar precios en Alsuper, Ahorrera, etc.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            ℹ️ Tu ubicación NO se comparte con nadie, solo se usa localmente para estimar precios
-          </p>
+
+          {location?.locationDetected && (
+            <Button variant="ghost" size="sm" onClick={clearLocation} className="text-destructive text-xs">
+              <X className="w-3 h-3 mr-1" /> Borrar ubicación
+            </Button>
+          )}
         </CardContent>
       </Card>
 
