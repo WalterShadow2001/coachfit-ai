@@ -83,25 +83,45 @@ export default function SamsungHealthCard() {
   const syncFromGoogleFit = async (token?: string) => {
     setSyncing(true)
     try {
-      const accessToken = token || localStorage.getItem('google_fit_access_token')
-      if (!accessToken) {
-        toast.error('No hay sesión de Google Fit. Conecta tu cuenta primero.')
-        setSyncing(false)
-        return
+      // Si hay token en localStorage (recién volvió de OAuth), usarlo
+      // Si no, la API usará los tokens guardados en la base de datos
+      const localStorageToken = localStorage.getItem('google_fit_access_token')
+      const body: any = {}
+      if (token || localStorageToken) {
+        body.accessToken = token || localStorageToken
       }
+      // Si no hay token en el body, la API busca en la DB y renueva si es necesario
+
       const res = await fetch('/api/google-fit/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+
+      if (!res.ok) {
+        // Si necesita reconectar
+        if (data.needsReconnect) {
+          setConnected(false)
+          localStorage.removeItem('google_fit_access_token')
+          toast.error('Tu conexión expiró. Vuelve a conectar Google Fit.')
+        } else {
+          toast.error(data.error || 'Error al sincronizar')
+        }
+        setSyncing(false)
+        return
+      }
+
+      // Sincronización exitosa
       setTodayData(data.data)
       setConnected(true)
       setLastSync(new Date())
+      // Limpiar localStorage ya que los tokens están en la DB
+      localStorage.removeItem('google_fit_access_token')
+      localStorage.removeItem('google_fit_refresh_token')
       toast.success(data.message)
     } catch (e: any) {
-      toast.error(e.message)
+      toast.error('Error de conexión: ' + e.message)
     } finally {
       setSyncing(false)
     }
@@ -126,8 +146,14 @@ export default function SamsungHealthCard() {
       await fetch(`/api/health?source=${service}`, { method: 'DELETE' })
       if (service === 'google_fit') {
         setConnected(false)
+        setTodayData(null)
         localStorage.removeItem('google_fit_access_token')
         localStorage.removeItem('google_fit_refresh_token')
+        // La API de health DELETE borra googleFitConnected
+        // Pero también necesitamos borrar los tokens
+        await fetch('/api/google-fit/sync', {
+          method: 'DELETE',
+        }).catch(() => {})
       }
       if (service === 'samsung_health') setSamsungConnected(false)
       toast.success('Desconectado')

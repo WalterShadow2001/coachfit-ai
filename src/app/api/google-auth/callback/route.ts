@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hashPassword, createSession, setSessionCookie } from '@/lib/auth'
+import { createSession, setSessionCookie } from '@/lib/auth'
+import bcrypt from 'bcryptjs'
 
 /**
  * GET /api/google-auth/callback
  * Google redirige aquí con el código. Intercambiamos por tokens,
- * obtenemos info del usuario, y creamos/iniciamos sesión.
+ * obtenemos info del usuario, creamos/iniciamos sesión,
+ * Y GUARDAMOS LOS TOKENS EN LA BASE DE DATOS (no localStorage).
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -44,10 +46,15 @@ export async function GET(req: NextRequest) {
   if (!tokenResponse.ok) {
     const err = await tokenResponse.text()
     console.error('Token exchange error:', err)
-    return NextResponse.redirect(new URL('/?auth_error=token_exchange', req.url))
+    return NextResponse.redirect(new URL('/?auth_error=token_exchange_failed', req.url))
   }
 
   const tokens = await tokenResponse.json()
+  // tokens: { access_token, refresh_token, expires_in, scope, token_type }
+
+  if (!tokens.access_token) {
+    return NextResponse.redirect(new URL('/?auth_error=no_access_token', req.url))
+  }
 
   // 2. Obtener info del usuario desde Google
   const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -55,11 +62,10 @@ export async function GET(req: NextRequest) {
   })
 
   if (!userInfoResponse.ok) {
-    return NextResponse.redirect(new URL('/?auth_error=userinfo', req.url))
+    return NextResponse.redirect(new URL('/?auth_error=userinfo_failed', req.url))
   }
 
   const googleUser = await userInfoResponse.json()
-  // googleUser: { id, email, name, given_name, picture, verified_email }
 
   // 3. Buscar o crear usuario en nuestra DB
   let user = await db.user.findUnique({
@@ -67,8 +73,6 @@ export async function GET(req: NextRequest) {
   })
 
   if (!user) {
-    // Crear usuario nuevo con datos de Google
-    // Generar username del email (ej: carlos@gmail.com → carlos)
     const usernameBase = googleUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
     let username = usernameBase
     let counter = 1
@@ -77,9 +81,8 @@ export async function GET(req: NextRequest) {
       counter++
     }
 
-    // Crear password aleatorio (no se usa, pero el campo es requerido)
     const randomPassword = Math.random().toString(36).slice(-20) + Math.random().toString(36).slice(-20)
-    const passwordHash = await hashPassword(randomPassword)
+    const passwordHash = await bcrypt.hash(randomPassword, 10)
 
     user = await db.user.create({
       data: {
@@ -92,16 +95,54 @@ export async function GET(req: NextRequest) {
   }
 
   // 4. Crear sesión
-  const sessionToken = await createSession(user.id, true) // remember = true
+  const sessionToken = await createSession(user.id, true)
   await setSessionCookie(sessionToken, true)
 
-  // 5. Redirigir al dashboard con tokens de Google Fit en URL (para guardar en localStorage)
-  const redirectUrl = new URL('/', req.url)
-  redirectUrl.searchParams.set('google_auth_success', 'true')
-  redirectUrl.searchParams.set('access_token', tokens.access_token)
-  if (tokens.refresh_token) {
-    redirectUrl.searchParams.set('refresh_token', tokens.refresh_token)
+  // 5. GUARDAR TOKENS EN LA BASE DE DATOS
+  const expiryTime = Math.floor(Date.now() / 1000) + (tokens.expires_in || 3600)
+
+  const profile = await db.userProfile.findFirst({ where: { userId: user.id } })
+  if (profile) {
+    await db.userProfile.update({
+      where: { id: profile.id },
+      data: {
+        googleFitAccessToken: tokens.access_token,
+        googleFitRefreshToken: tokens.refresh_token || profile.googleFitRefreshToken,
+        googleFitTokenExpiry: expiryTime,
+      },
+    })
   }
 
+  // 6. HACER SINCRONIZACIÓN INMEDIATA para verificar que funciona
+  try {
+    const syncResponse = await fetch(`https://coachfit-ai-phi.vercel.app/api/google-fit/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: tokens.access_token, userId: user.id }),
+    })
+    const syncData = await syncResponse.json()
+    console.log('Auto-sync result:', syncData)
+
+    // Solo marcar como conectado si la sincronización fue exitosa
+    if (syncData.ok) {
+      const profile2 = await db.userProfile.findFirst({ where: { userId: user.id } })
+      if (profile2) {
+        await db.userProfile.update({
+          where: { id: profile2.id },
+          data: {
+            googleFitConnected: true,
+            googleFitLastSync: new Date(),
+          },
+        })
+      }
+    }
+  } catch (syncError) {
+    console.error('Auto-sync failed:', syncError)
+    // No marcamos como conectado si falló
+  }
+
+  // 7. Redirigir al dashboard
+  const redirectUrl = new URL('/', req.url)
+  redirectUrl.searchParams.set('google_auth_success', 'true')
   return NextResponse.redirect(redirectUrl)
 }

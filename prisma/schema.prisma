@@ -64,6 +64,9 @@ model UserProfile {
   samsungHealthLastSync  DateTime?
   googleFitConnected     Boolean @default(false)
   googleFitLastSync      DateTime?
+  googleFitAccessToken   String?
+  googleFitRefreshToken  String?
+  googleFitTokenExpiry   Int?
   // Configuración de monitoreo
   heartRateMonitoring    Boolean @default(false) // monitoreo continuo de FC
   // Campos para sincronización
